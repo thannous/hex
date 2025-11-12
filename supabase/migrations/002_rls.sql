@@ -40,6 +40,19 @@ $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 COMMENT ON FUNCTION is_member_of(tenant UUID) IS 'Vérifier membership pour un tenant';
 
+-- Empêcher toute modification du tenant_id via un trigger générique
+CREATE OR REPLACE FUNCTION enforce_immutable_tenant_id()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
+    RAISE EXCEPTION 'tenant_id is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION enforce_immutable_tenant_id() IS 'Bloque toute modification du tenant_id après insertion';
+
 -- STEP 2: Enable RLS on all tenant-scoped tables
 -- ==============================================================================
 
@@ -141,7 +154,12 @@ CREATE POLICY "engineers_and_admins_can_update_catalogue"
 CREATE POLICY "prevent_tenant_change_catalogue"
   ON catalogue_items FOR UPDATE
   USING (is_member_of(tenant_id))
-  WITH CHECK (tenant_id = OLD.tenant_id);
+  WITH CHECK (is_member_of(tenant_id));
+
+CREATE TRIGGER catalogue_items_prevent_tenant_change
+  BEFORE UPDATE ON catalogue_items
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_immutable_tenant_id();
 
 -- STEP 7: Supplier Prices Policies
 -- ==============================================================================
@@ -178,7 +196,12 @@ CREATE POLICY "engineers_and_admins_can_update_prices"
 CREATE POLICY "prevent_tenant_change_prices"
   ON supplier_prices FOR UPDATE
   USING (is_member_of(tenant_id))
-  WITH CHECK (tenant_id = OLD.tenant_id);
+  WITH CHECK (is_member_of(tenant_id));
+
+CREATE TRIGGER supplier_prices_prevent_tenant_change
+  BEFORE UPDATE ON supplier_prices
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_immutable_tenant_id();
 
 -- STEP 8: Material Indices Policies
 -- ==============================================================================
@@ -362,7 +385,7 @@ CREATE POLICY "admins_only_view_audit_logs"
     AND is_admin_of(tenant_id)
   );
 
--- Audit logs ne peuvent pas être modifiés directement
-ALTER TABLE audit_logs DISABLE TRIGGER ALL;
+-- Empêche uniquement l'exécution de triggers personnalisés côté client
+ALTER TABLE audit_logs DISABLE TRIGGER USER;
 
 COMMIT;

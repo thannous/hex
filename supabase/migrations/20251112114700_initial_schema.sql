@@ -3,9 +3,18 @@ create extension if not exists "pgcrypto";
 create extension if not exists "citext";
 
 -- Enums
-create type public.role_type as enum ('admin', 'engineer', 'viewer');
-create type public.import_status as enum ('pending', 'processing', 'parsed', 'failed');
-create type public.quote_status as enum ('draft', 'sent', 'won', 'lost');
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'role_type') then
+    create type public.role_type as enum ('admin', 'engineer', 'viewer');
+  end if;
+  if not exists (select 1 from pg_type where typname = 'import_status') then
+    create type public.import_status as enum ('pending', 'processing', 'parsed', 'failed');
+  end if;
+  if not exists (select 1 from pg_type where typname = 'quote_status') then
+    create type public.quote_status as enum ('draft', 'sent', 'won', 'lost');
+  end if;
+end $$;
 
 -- Core tenant tables
 create table if not exists public.tenants (
@@ -176,7 +185,7 @@ create table if not exists public.audit_logs (
   user_id uuid,
   action text not null,
   table_name text not null,
-  record_id text not null,
+  record_id uuid not null,
   old_data jsonb,
   new_data jsonb,
   created_at timestamptz not null default now()
@@ -209,7 +218,7 @@ begin
     actor,
     tg_op,
     tg_table_name,
-    coalesce((case when tg_op = 'DELETE' then old.id else new.id end)::text, gen_random_uuid()::text),
+    coalesce((case when tg_op = 'DELETE' then old.id else new.id end), gen_random_uuid()),
     case when tg_op = 'INSERT' then null else to_jsonb(old) end,
     case when tg_op = 'DELETE' then null else to_jsonb(new) end
   );

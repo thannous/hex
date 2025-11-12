@@ -158,7 +158,10 @@ SELECT
     WHEN sp.validite_fin > CURRENT_DATE THEN true
     ELSE false
   END AS is_valid,
-  EXTRACT(DAY FROM (CURRENT_DATE - sp.validite_fin)) as days_since_expiry
+  CASE
+    WHEN sp.validite_fin IS NULL THEN NULL
+    ELSE (CURRENT_DATE - sp.validite_fin)
+  END AS days_since_expiry
 FROM supplier_prices sp;
 
 COMMENT ON VIEW latest_supplier_prices IS 'Prix fournisseurs avec flag validité';
