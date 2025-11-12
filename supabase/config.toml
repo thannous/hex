@@ -1,0 +1,26 @@
+project_id = "hex-ops"
+
+[api]
+  port = 54321
+  schemas = ["public", "storage", "graphql_public"]
+  extra_search_path = ["public", "extensions"]
+
+[db]
+  port = 54322
+  major_version = 15
+
+[studio]
+  port = 54323
+
+[inbucket]
+  port = 54324
+
+[edge_runtime]
+  port = 54325
+
+[storage]
+  file_size_limit = 524288000 # 500 MB
+  [storage.buckets.imports]
+    public = false
+  [storage.buckets.exports]
+    public = false

@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "HEX Ops",
+    "slug": "hex-ops",
+    "version": "0.1.0",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hexops.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.hexops.mobile"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "hex-ops",
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": false,
+          "asyncRoutes": true
+        }
+      ]
+    ]
+  }
+}

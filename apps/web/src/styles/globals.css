@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-neutral-50 text-neutral-900 antialiased;
+  }
+
+  code,
+  pre {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  }
+}
+
+@layer components {
+  .container-safe {
+    @apply mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-neutral-200 text-neutral-900 rounded-lg hover:bg-neutral-300 transition-colors;
+  }
+
+  .card {
+    @apply bg-white rounded-lg shadow-md p-6;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .truncate-lines {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .truncate-2 {
+    @apply truncate-lines;
+    -webkit-line-clamp: 2;
+  }
+
+  .truncate-3 {
+    @apply truncate-lines;
+    -webkit-line-clamp: 3;
+  }
+}
