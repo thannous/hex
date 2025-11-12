@@ -115,3 +115,107 @@ export interface AuditLog {
   newData?: Record<string, unknown>;
   createdAt: Date;
 }
+
+/**
+ * Mapping types (Sprint 3)
+ */
+
+export type FieldType = 'text' | 'number' | 'date' | 'boolean' | 'email' | 'currency' | 'hex_code' | 'supplier_ref';
+export type MappingStatus = 'draft' | 'applied' | 'invalid';
+
+export interface ColumnMapping {
+  sourceColumn: string;
+  targetField: string;
+  fieldType: FieldType;
+  mappingOrder: number;
+}
+
+export interface DPGFMapping {
+  id: string;
+  tenantId: string;
+  importId: string;
+  sourceColumn: string;
+  targetField: string;
+  fieldType: FieldType;
+  mappingOrder: number;
+  createdAt: Date;
+  createdBy: string;
+  updatedAt: Date;
+}
+
+export interface MappingMemory {
+  id: string;
+  tenantId: string;
+  sourceColumnOriginal: string;
+  sourceColumnNormalized: string;
+  supplier: string;
+  targetField: string;
+  confidence: number; // 0-1
+  useCount: number;
+  lastUsedAt: Date;
+  createdAt: Date;
+}
+
+export interface MappingTemplate {
+  id: string;
+  tenantId: string;
+  supplierName: string;
+  mappings: ColumnMapping[];
+  version: number;
+  description?: string;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Suggestion {
+  sourceColumn: string;
+  targetField: string;
+  confidence: number;
+  source: 'memory' | 'template';
+  useCount?: number;
+}
+
+export interface DataPreview {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  totalRows: number;
+}
+
+export interface ValidationRule {
+  field: string;
+  required?: boolean;
+  type?: FieldType;
+  pattern?: string;
+  minLength?: number;
+  maxLength?: number;
+  min?: number;
+  max?: number;
+}
+
+export interface ValidationIssue {
+  rowIndex: number;
+  field: string;
+  code: 'required' | 'type' | 'pattern' | 'range' | 'length';
+  message: string;
+  value?: unknown;
+}
+
+export interface ValidationResult {
+  issues: ValidationIssue[];
+  sampleSize: number;
+  totalRows: number;
+}
+
+export interface DuplicateGroup {
+  key: string; // 'hex_code' or 'supplier_ref'
+  keyValue: string;
+  rowIndices: number[];
+  count: number;
+}
+
+export interface DuplicatesResult {
+  duplicates: DuplicateGroup[];
+  sampleSize: number;
+  totalRows: number;
+}

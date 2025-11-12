@@ -10,6 +10,18 @@ import {
   MaterialIndexSchema,
   CreateQuoteSchema,
   PricingParamsSchema,
+  CreateMappingSchema,
+  GetPreviewSchema,
+  PreviewOutputSchema,
+  GetSuggestionsSchema,
+  SuggestionsOutputSchema,
+  GetTemplatesSchema,
+  MappingTemplateSchema,
+  SaveTemplateSchema,
+  ValidateInputSchema,
+  ValidateOutputSchema,
+  GetDuplicatesSchema,
+  DuplicatesOutputSchema,
 } from './schemas';
 
 // Initialize tRPC
@@ -231,10 +243,14 @@ export const importsRouter = t.router({
       } catch (error) {
         // Marquer l'import comme failed
         // Try to mark as failed (ignore response)
-        await supabase
-          .from('dpgf_imports')
-          .update({ status: 'failed' })
-          .eq('id', input.importId);
+        try {
+          await supabase
+            .from('dpgf_imports')
+            .update({ status: 'failed' })
+            .eq('id', input.importId);
+        } catch {
+          // Best-effort status update; failures should not leak to clients
+        }
 
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -361,6 +377,271 @@ export const auditRouter = t.router({
     }),
 });
 
+// ============================================================================
+// Mappings Router (Sprint 3)
+// ============================================================================
+
+export const mappingsRouter = t.router({
+  // Get preview of raw import data
+  getPreview: authedProcedure
+    .input(GetPreviewSchema)
+    .output(PreviewOutputSchema)
+    .query(async ({ input, ctx }) => {
+      const { supabase } = ctx;
+      const { importId, limit, offset } = input;
+
+      try {
+        // Get total row count
+        const { count: totalRows, error: countError } = await supabase
+          .from('dpgf_rows_raw')
+          .select('id', { count: 'exact' })
+          .eq('import_id', importId)
+          .eq('tenant_id', ctx.tenantId);
+
+        if (countError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to count rows: ${countError.message}`,
+          });
+        }
+
+        // Get sample rows with pagination
+        const { data: rows, error: rowError } = await supabase
+          .from('dpgf_rows_raw')
+          .select('raw_data')
+          .eq('import_id', importId)
+          .eq('tenant_id', ctx.tenantId)
+          .order('row_index')
+          .range(offset, offset + limit - 1);
+
+        if (rowError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to fetch rows: ${rowError.message}`,
+          });
+        }
+
+        // Extract columns from first row and flatten data
+        const parsedRows = rows || [];
+        const columns = parsedRows.length > 0 ? Object.keys(parsedRows[0].raw_data || {}) : [];
+        const flattenedRows = parsedRows.map((r) => r.raw_data || {});
+
+        return {
+          columns,
+          rows: flattenedRows,
+          totalRows: totalRows || 0,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to get preview',
+        });
+      }
+    }),
+
+  // Create mapping configuration for import
+  create: adminOrEngineerProcedure
+    .input(CreateMappingSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { supabase } = ctx;
+      const { importId, mappings } = input;
+
+      try {
+        // Upsert mappings for this import
+        const mappingRecords = mappings.map((m) => ({
+          tenant_id: ctx.tenantId,
+          import_id: importId,
+          source_column: m.sourceColumn,
+          target_field: m.targetField,
+          field_type: m.fieldType,
+          mapping_order: m.mappingOrder,
+          created_by: ctx.userId,
+          updated_at: new Date().toISOString(),
+        }));
+
+        const { error } = await supabase
+          .from('dpgf_mappings')
+          .upsert(mappingRecords, { onConflict: 'tenant_id,import_id,source_column' });
+
+        if (error) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to create mappings: ${error.message}`,
+          });
+        }
+
+        // Update import status to draft
+        await supabase
+          .from('dpgf_imports')
+          .update({ mapping_status: 'draft', mapping_version: 1 })
+          .eq('id', importId)
+          .catch(() => {});
+
+        return {
+          ok: true,
+          version: 1,
+          count: mappings.length,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to create mappings',
+        });
+      }
+    }),
+
+  // Get suggestions based on history and templates
+  getSuggestions: authedProcedure
+    .input(GetSuggestionsSchema)
+    .output(SuggestionsOutputSchema)
+    .query(async ({ input, ctx }) => {
+      const { supabase } = ctx;
+      const { supplier, sourceColumns } = input;
+
+      try {
+        // Query mapping_memory for suggestions
+        const { data: suggestions, error } = await supabase
+          .from('mapping_memory')
+          .select('source_column_original, target_field, confidence, use_count, last_used_at')
+          .eq('tenant_id', ctx.tenantId)
+          .eq('supplier', supplier)
+          .in(
+            'source_column_normalized',
+            sourceColumns.map((c) => c.toLowerCase().trim())
+          )
+          .order('confidence', { ascending: false });
+
+        if (error) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to get suggestions: ${error.message}`,
+          });
+        }
+
+        return (suggestions || []).map((s) => ({
+          sourceColumn: s.source_column_original,
+          targetField: s.target_field,
+          confidence: s.confidence || 0.5,
+          source: 'memory' as const,
+          useCount: s.use_count,
+        }));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to get suggestions',
+        });
+      }
+    }),
+
+  // Get templates for supplier
+  getTemplates: authedProcedure
+    .input(GetTemplatesSchema)
+    .query(async ({ input, ctx }) => {
+      const { supabase } = ctx;
+      const { supplier } = input;
+
+      try {
+        const { data: templates, error } = await supabase
+          .from('mapping_templates')
+          .select('id, supplier_name, mappings, version, description, created_at')
+          .eq('tenant_id', ctx.tenantId)
+          .eq('supplier_name', supplier)
+          .order('version', { ascending: false });
+
+        if (error) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to get templates: ${error.message}`,
+          });
+        }
+
+        return (templates || []).map((t) => ({
+          id: t.id,
+          supplier: t.supplier_name,
+          mappings: t.mappings || [],
+          version: t.version,
+          description: t.description,
+          createdAt: new Date(t.created_at),
+        }));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to get templates',
+        });
+      }
+    }),
+
+  // Save template for reuse
+  saveTemplate: adminOrEngineerProcedure
+    .input(SaveTemplateSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { supabase } = ctx;
+
+      try {
+        const { data, error } = await supabase
+          .from('mapping_templates')
+          .insert({
+            tenant_id: ctx.tenantId,
+            supplier_name: input.supplier,
+            mappings: input.mappings,
+            description: input.description,
+            version: input.version || 1,
+            created_by: ctx.userId,
+          })
+          .select()
+          .single();
+
+        if (error) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to save template: ${error.message}`,
+          });
+        }
+
+        return {
+          id: data.id,
+          version: data.version,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to save template',
+        });
+      }
+    }),
+
+  // Placeholder: Validate data
+  validate: authedProcedure
+    .input(ValidateInputSchema)
+    .output(ValidateOutputSchema)
+    .query(async ({ input, ctx }) => {
+      // Will be implemented in Phase 4 (validation engine)
+      return {
+        issues: [],
+        sampleSize: 0,
+        totalRows: 0,
+      };
+    }),
+
+  // Placeholder: Detect duplicates
+  getDuplicates: authedProcedure
+    .input(GetDuplicatesSchema)
+    .output(DuplicatesOutputSchema)
+    .query(async ({ input, ctx }) => {
+      // Will be implemented in Phase 4 (duplicate detection)
+      return {
+        duplicates: [],
+        sampleSize: 0,
+        totalRows: 0,
+      };
+    }),
+});
+
 // Root router
 export const appRouter = t.router({
   auth: authRouter,
@@ -371,6 +652,7 @@ export const appRouter = t.router({
   quotes: quotesRouter,
   pricingParams: pricingParamsRouter,
   audit: auditRouter,
+  mappings: mappingsRouter,
 });
 
 export type AppRouter = typeof appRouter;
