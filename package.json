@@ -9,7 +9,8 @@
   ],
   "packageManager": "npm@10.9.2",
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev --parallel --filter=!@hex/mobile",
+    "dev:all": "turbo run dev --parallel",
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
