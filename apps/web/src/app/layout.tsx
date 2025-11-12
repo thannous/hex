@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import { Providers } from './providers';
 import '../styles/globals.css';
@@ -6,10 +6,14 @@ import '../styles/globals.css';
 export const metadata: Metadata = {
   title: 'HEX Ops - SaaS Chiffrage CVC/Plomberie',
   description: 'Automatisez et fiabilisez votre chiffrage CVC/Plomberie',
-  viewport: 'width=device-width, initial-scale=1',
   icons: {
     icon: '/favicon.ico',
   },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
