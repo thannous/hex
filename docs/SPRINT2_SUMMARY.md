@@ -36,8 +36,12 @@
 ### 5. Frontend Components & Hooks
 - **ImportWizard**: Multi-step UI with drag-drop file upload
 - **ImportsList**: Real-time table with status updates
-- **useImportFlow**: Complete workflow orchestration
-- **useFileParser**: Web Worker lifecycle management
+- **useImportFlow**: Complete workflow orchestration (now exposes `reset()`)
+- **useFileParser**: Web Worker lifecycle management (terminates old worker when switching formats)
+
+### 7. End-to-End Tests
+- Playwright-based e2e covers Import Wizard happy-path (CSV → reset → XLSX) using a harness route (`/testing/import-flow`) with a mock flow (no workers).
+- Config and tests live in `apps/web/playwright.config.ts` and `apps/web/tests/e2e/import-flow.spec.ts`.
 
 ### 6. Real-Time Status Tracking
 - TanStack Query integration with 5-second polling
@@ -81,6 +85,7 @@ Large Files (> limit) → Automatic Fallback → Server Edge Function → Reliab
 - All operations isolated by tenant_id
 - Database RLS enforces tenant boundaries
 - tRPC context includes authenticated user
+ - DB integrity hardened: composite FKs enforce `(id, tenant_id)` relationships for `supplier_prices` and `quote_lines`, preventing cross-tenant references
 
 ### Type Safety
 - Full TypeScript coverage
@@ -155,7 +160,7 @@ ORDER BY created_at DESC;
 
 ## 📋 Files Created/Modified
 
-### Created (13 files)
+### Created/Updated (selected)
 ```
 apps/web/src/components/ImportWizard.tsx       (200 lines)
 apps/web/src/components/ImportsList.tsx        (150 lines)
@@ -164,7 +169,10 @@ apps/web/src/hooks/useFileParser.ts            (210 lines)
 apps/web/src/workers/csv-parser.worker.ts      (110 lines)
 apps/web/src/workers/xlsx-parser.worker.ts     (100 lines)
 apps/web/src/app/imports/page.tsx              (47 lines)
-supabase/functions/parse-dpgf/index.ts         (210 lines)
+apps/web/src/app/testing/import-flow/*         (harness route)
+apps/web/tests/e2e/import-flow.spec.ts         (Playwright e2e)
+apps/web/playwright.config.ts                  (Playwright config)
+supabase/functions/parse-dpgf/index.ts         (210 lines, improved error-handling on failure)
 docs/SPRINT2_IMPORT_SYSTEM.md                  (documentation)
 docs/SPRINT2_SUMMARY.md                        (this file)
 ```

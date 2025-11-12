@@ -7,8 +7,8 @@
 | CSV Parser | `apps/web/src/workers/csv-parser.worker.ts` | 110 | Streaming CSV with PapaParse |
 | XLSX Parser | `apps/web/src/workers/xlsx-parser.worker.ts` | 100 | XLSX parsing with SheetJS |
 | File Parser Hook | `apps/web/src/hooks/useFileParser.ts` | 210 | Worker lifecycle management |
-| Import Flow Hook | `apps/web/src/hooks/useImportFlow.ts` | 180 | Complete workflow orchestration |
-| Import Wizard | `apps/web/src/components/ImportWizard.tsx` | 200 | UI for file upload & progress |
+| Import Flow Hook | `apps/web/src/hooks/useImportFlow.ts` | 180 | Complete workflow orchestration (`reset()` available) |
+| Import Wizard | `apps/web/src/components/ImportWizard.tsx` | 200 | UI for file upload & progress (supports `useImportFlowImpl`) |
 | Imports List | `apps/web/src/components/ImportsList.tsx` | 150 | Real-time imports table |
 | Imports Page | `apps/web/src/app/imports/page.tsx` | 47 | Route for `/imports` |
 | Edge Function | `supabase/functions/parse-dpgf/index.ts` | 210 | Server parsing (Deno) |
@@ -65,6 +65,7 @@ import { ImportWizard } from '@/components/ImportWizard';
 // Props:
 // - tenantId: string (required) - Tenant ID for multi-tenancy
 // - onCompleted: (importId: string, rowCount: number) => void (optional)
+// - useImportFlowImpl?: () => ImportFlowController (optional, used by test harness)
 ```
 
 ### ImportsList
@@ -120,6 +121,7 @@ import { useImportFlow } from '@/hooks/useImportFlow';
 const {
   state: { step, progress, error, importId, rowCount, filename },
   startImport,
+  reset,
 } = useImportFlow();
 
 // Start import process
@@ -127,6 +129,7 @@ await startImport(file, tenantId);
 
 // State flow: idle → uploading → parsing → complete/error
 // Progress: 0 → 50 (upload) → 100 (complete)
+// Call reset() to return to idle
 ```
 
 ## Web Worker Message Protocol
@@ -275,6 +278,27 @@ with open('large.csv', 'w', newline='') as f:
 # 5. Status should change from 'processing' to 'parsed' after ~30s
 ```
 
+### End-to-End (Playwright)
+
+We ship a Playwright setup and a test harness route to exercise the Import Wizard without external services or Web Workers.
+
+- Enable the harness route via env: `NEXT_PUBLIC_ENABLE_TEST_ROUTES=true`
+- Route under test: `/testing/import-flow`
+- Test file: `apps/web/tests/e2e/import-flow.spec.ts`
+- Config: `apps/web/playwright.config.ts`
+
+Run:
+```bash
+cd apps/web
+npx playwright install --with-deps
+npm run test:e2e
+```
+
+What it validates:
+- CSV upload → success banner shows row count
+- "Import another file" → returns to idle state
+- Second upload XLSX → success (guards against stale worker reuse)
+
 ## Debugging Tips
 
 ### Check Worker Status
@@ -320,9 +344,9 @@ FROM dpgf_imports;
 |-------|-------|----------|
 | "Unsupported file format" | Wrong file extension | Upload .csv, .xlsx, or .xls |
 | "File size exceeds limit" | File > 50MB (CSV) or 10MB (XLSX) | Use larger file or server parsing |
-| Worker error | Worker script not found | Check webpack config for worker loading |
+| Worker error | Worker script not found | In e2e, use the harness (no workers). In app, ensure worker paths are resolvable |
 | "Failed to create import" | DB insert error | Check tenantId exists, RLS policies |
-| Status stays "parsing" | Edge Function stuck | Check Edge Function logs, Storage permissions |
+| Status stays "parsing" | Edge Function stuck | Check Edge Function logs, Storage permissions; retain `importId` from parsed body in error path |
 | Polling not working | Query not enabled | Add `enabled: !!importId` to useQuery |
 
 ## Performance Tuning
@@ -339,6 +363,12 @@ FROM dpgf_imports;
 ### For Faster Polling
 - Reduce `refetchInterval` from 5000 to 2000 (but increases server load)
 - Use `staleTime` to reduce unnecessary refetches
+
+## Styling (Tailwind v4 Tokens)
+
+Tailwind v4 uses design tokens declared via `@theme` in CSS. Primary brand colors are defined in `apps/web/src/styles/globals.css` as `--color-primary-50..900`, enabling utilities like `bg-primary-600` and `text-primary-900`.
+
+If a utility like `bg-primary-600` throws "Cannot apply unknown utility class", ensure the color tokens are declared under `@theme`.
 
 ## Next Steps (Sprint 3)
 

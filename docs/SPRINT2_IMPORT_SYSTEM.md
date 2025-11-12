@@ -22,6 +22,7 @@ useImportFlow (Orchestration)
         ├─ Client: Web Worker (CSV/XLSX)
         │   ├─ parseCSV() with streaming (50MB max)
         │   └─ parseXLSX() single-sheet (10MB max)
+        │   └─ Worker switching: terminate previous worker when switching format
         └─ Server: Edge Function (fallback)
             ├─ Download from Storage
             ├─ Parse file
@@ -80,6 +81,7 @@ useImportFlow (Orchestration)
 
 **`apps/web/src/hooks/useFileParser.ts`** (~210 lines)
 - Manages Web Worker lifecycle
+- Maintains one active worker per format; terminates the previous worker when switching between CSV and XLSX to prevent cross-format reuse bugs
 - Handles chunked parsing results for CSV
 - Detects fallback conditions
 - Provides: `parseCSV()`, `parseXLSX()`, `abort()`, `cleanup()`
@@ -92,6 +94,7 @@ useImportFlow (Orchestration)
 - Calls tRPC procedures for backend operations
 - Integrates useFileParser for client-side parsing
 - Automatically triggers server parsing on fallback
+ - Exposes `reset()` to return to idle step
 
 ### Components
 
@@ -102,6 +105,7 @@ useImportFlow (Orchestration)
 - Step 4: Success confirmation
 - Error state with retry option
 - Validates file type and size
+ - Supports dependency injection of a custom flow via `useImportFlowImpl` (used by the e2e test harness)
 
 **`apps/web/src/components/ImportsList.tsx`** (~150 lines)
 - Table displaying recent imports
@@ -151,7 +155,22 @@ imports.triggerParsing(importId) → { success: true, rowCount: number }
   4. Normalize into `DPGFRow[]` objects
   5. Batch insert into `dpgf_rows_raw` (1000 rows per insert)
   6. Update import status to 'parsed' + row_count
-- Error handling: sets status='failed' if parsing fails
+- Error handling: sets status='failed' if parsing fails; the request body is parsed once and `importId` is retained so failures reliably mark the import as failed
+
+### Styling (Tailwind CSS v4)
+
+- Tailwind v4 is configured with design tokens declared directly in CSS using `@theme`.
+- Primary palette is provided in `apps/web/src/styles/globals.css` as `--color-primary-50..900`, enabling utilities like `bg-primary-600` and gradients.
+
+```css
+@import "tailwindcss";
+
+@theme {
+  --color-primary-600: #2563eb; /* etc. */
+}
+```
+
+If you see "Cannot apply unknown utility class", ensure the corresponding color (or token) exists under `@theme`.
 
 ## Database Schema
 
@@ -229,6 +248,24 @@ const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB for testing
 - Create Excel file with 2 sheets
 - Upload → should fallback with reason "multi_sheet"
 ```
+
+### 3. End-to-End Tests (Playwright)
+
+We provide a test harness route that avoids real Web Workers and external services, making e2e tests deterministic:
+
+- Route: `/testing/import-flow` (gated by `NEXT_PUBLIC_ENABLE_TEST_ROUTES=true`)
+- Harness: `apps/web/src/app/testing/import-flow/test-harness.tsx`
+- Mock flow: `useMockImportFlow` parses CSV via `File.text()` and XLSX via a dynamic `xlsx` import (no workers)
+
+Run tests:
+
+```bash
+cd apps/web
+npx playwright install --with-deps
+npm run test:e2e
+```
+
+The spec lives at `apps/web/tests/e2e/import-flow.spec.ts` and covers sequential CSV→XLSX parsing without page reload (guards against format-switch worker bugs).
 
 ### 3. Testing Real-Time Polling
 
@@ -334,6 +371,7 @@ const { data, error } = await supabase.storage.from('dpgf-uploads').download(pat
 - Check Edge Function logs: `supabase functions list` then `supabase functions logs parse-dpgf`
 - Verify dpgf-uploads bucket exists and has correct permissions
 - Check dpgf_imports table for failed status
+- Ensure the Edge Function parses the request body once and retains `importId` for use in the `catch` block (double-reading `req.json()` will fail and leave imports in `processing`).
 
 **ImportsList doesn't update:**
 - Open DevTools → Network tab
