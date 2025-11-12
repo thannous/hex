@@ -1,3 +1,5 @@
+import type { TypedSupabaseClient } from '@hex/db';
+
 export type TenantRole = 'admin' | 'engineer' | 'viewer';
 
 export interface TenantContext {
@@ -5,6 +7,7 @@ export interface TenantContext {
   tenantId: string;
   role: TenantRole;
   email: string;
+  supabase: TypedSupabaseClient;
 }
 
 export interface AnonymousContext {
@@ -12,6 +15,7 @@ export interface AnonymousContext {
   tenantId: null;
   role: 'anonymous';
   email: null;
+  supabase: TypedSupabaseClient;
 }
 
 export type RequestContext = TenantContext | AnonymousContext;
