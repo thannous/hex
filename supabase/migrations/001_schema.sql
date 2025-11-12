@@ -59,7 +59,8 @@ CREATE TABLE catalogue_items (
   discipline TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(tenant_id, hex_code)
+  UNIQUE(tenant_id, hex_code),
+  UNIQUE(id, tenant_id)
 );
 
 COMMENT ON TABLE catalogue_items IS 'Produits catalogues avec HEX_CODE';
@@ -67,7 +68,7 @@ COMMENT ON TABLE catalogue_items IS 'Produits catalogues avec HEX_CODE';
 CREATE TABLE supplier_prices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  catalogue_item_id UUID NOT NULL REFERENCES catalogue_items(id) ON DELETE CASCADE,
+  catalogue_item_id UUID NOT NULL,
   supplier_name TEXT NOT NULL,
   prix_brut NUMERIC(10, 2) NOT NULL,
   remise_pct NUMERIC(5, 2) DEFAULT 0,
@@ -75,7 +76,11 @@ CREATE TABLE supplier_prices (
   validite_fin DATE,
   delai_jours INTEGER,
   created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT supplier_prices_catalogue_item_tenant_fk
+    FOREIGN KEY (catalogue_item_id, tenant_id)
+    REFERENCES catalogue_items(id, tenant_id)
+    ON DELETE CASCADE
 );
 
 COMMENT ON TABLE supplier_prices IS 'Prix fournisseurs avec calcul auto prix_net';
@@ -180,7 +185,8 @@ CREATE TABLE quotes (
   meta JSONB,
   valid_until DATE,
   created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(id, tenant_id)
 );
 
 COMMENT ON TABLE quotes IS 'Devis générés';
@@ -188,18 +194,25 @@ COMMENT ON TABLE quotes IS 'Devis générés';
 CREATE TABLE quote_lines (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  quote_id UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+  quote_id UUID NOT NULL,
   position INTEGER NOT NULL,
   designation TEXT NOT NULL,
   quantity NUMERIC(12, 3) NOT NULL,
   unit TEXT,
-  catalogue_item_id UUID REFERENCES catalogue_items(id),
+  catalogue_item_id UUID,
   cout_achat_u NUMERIC(10, 2),
   mo_u NUMERIC(10, 2),
   pv_u NUMERIC(10, 2),
   flags JSONB,
   created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT quote_lines_quote_tenant_fk
+    FOREIGN KEY (quote_id, tenant_id)
+    REFERENCES quotes(id, tenant_id)
+    ON DELETE CASCADE,
+  CONSTRAINT quote_lines_catalogue_item_tenant_fk
+    FOREIGN KEY (catalogue_item_id, tenant_id)
+    REFERENCES catalogue_items(id, tenant_id)
 );
 
 COMMENT ON TABLE quote_lines IS 'Lignes devis calculées (MO, PV, flags qualité)';

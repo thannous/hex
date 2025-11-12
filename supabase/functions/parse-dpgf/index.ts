@@ -37,6 +37,7 @@ interface DPGFRow {
 }
 
 serve(async (req: Request) => {
+  let body: ParseDPGFRequest | null = null;
   try {
     // Vérifier la méthode
     if (req.method !== 'POST') {
@@ -46,7 +47,7 @@ serve(async (req: Request) => {
       });
     }
 
-    const body: ParseDPGFRequest = await req.json();
+    body = await req.json();
     const { storagePath, importId, tenantId } = body;
 
     if (!storagePath || !importId || !tenantId) {
@@ -136,13 +137,12 @@ serve(async (req: Request) => {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('[parse-dpgf] Error:', errorMessage);
 
-    // Essayer de marquer l'import comme failed
-    const body = await req.json().catch(() => ({}));
-    if (body.importId) {
+    const importId = body?.importId;
+    if (importId) {
       await supabase
         .from('dpgf_imports')
         .update({ status: 'failed' })
-        .eq('id', body.importId)
+        .eq('id', importId)
         .catch(() => {});
     }
 

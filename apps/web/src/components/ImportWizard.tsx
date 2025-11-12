@@ -8,17 +8,28 @@
  * 3. Mapping des colonnes
  */
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useImportFlow } from '@/hooks/useImportFlow';
 
 interface ImportWizardProps {
   tenantId: string;
   onCompleted?: (importId: string, rowCount: number) => void;
+  useImportFlowImpl?: () => ReturnType<typeof useImportFlow>;
 }
 
-export function ImportWizard({ tenantId, onCompleted }: ImportWizardProps) {
-  const { state, startImport, importId } = useImportFlow();
+export function ImportWizard({ tenantId, onCompleted, useImportFlowImpl }: ImportWizardProps) {
+  const useFlow = useImportFlowImpl ?? useImportFlow;
+  const { state, startImport, importId, reset } = useFlow();
   const [dragActive, setDragActive] = useState(false);
+
+  const handleReset = () => {
+    if (reset) {
+      reset();
+      setDragActive(false);
+    } else {
+      window.location.reload();
+    }
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -157,12 +168,21 @@ export function ImportWizard({ tenantId, onCompleted }: ImportWizardProps) {
               </div>
             </div>
           </div>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full bg-blue-600 text-white rounded-lg py-2 hover:bg-blue-700 transition-colors"
-          >
-            Continue to Mapping
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-blue-600 text-white rounded-lg py-2 hover:bg-blue-700 transition-colors"
+            >
+              Continue to Mapping
+            </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="w-full border border-gray-300 text-gray-800 rounded-lg py-2 hover:bg-gray-50 transition-colors"
+            >
+              Import another file
+            </button>
+          </div>
         </div>
       )}
 
@@ -184,12 +204,21 @@ export function ImportWizard({ tenantId, onCompleted }: ImportWizardProps) {
               </div>
             </div>
           </div>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full bg-gray-600 text-white rounded-lg py-2 hover:bg-gray-700 transition-colors"
-          >
-            Try Again
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={handleReset}
+              className="w-full bg-gray-600 text-white rounded-lg py-2 hover:bg-gray-700 transition-colors"
+            >
+              Try Again
+            </button>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="w-full border border-gray-300 text-gray-800 rounded-lg py-2 hover:bg-gray-50 transition-colors"
+            >
+              Reload page
+            </button>
+          </div>
         </div>
       )}
     </div>

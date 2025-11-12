@@ -11,7 +11,7 @@ import { trpc } from '@/lib/trpc';
 import { createBrowserClient } from '@hex/db';
 import { useFileParser } from './useFileParser';
 
-interface ImportFlowState {
+export interface ImportFlowState {
   step: 'idle' | 'uploading' | 'parsing' | 'complete' | 'error';
   progress: number;
   error: string | null;
@@ -20,12 +20,22 @@ interface ImportFlowState {
   filename?: string;
 }
 
-export function useImportFlow() {
-  const [state, setState] = useState<ImportFlowState>({
-    step: 'idle',
-    progress: 0,
-    error: null,
-  });
+export interface ImportFlowController {
+  state: ImportFlowState;
+  startImport: (file: File, tenantId: string) => Promise<void>;
+  importId?: string;
+  filename?: string;
+  reset: () => void;
+}
+
+const INITIAL_STATE: ImportFlowState = {
+  step: 'idle',
+  progress: 0,
+  error: null,
+};
+
+export function useImportFlow(): ImportFlowController {
+  const [state, setState] = useState<ImportFlowState>(INITIAL_STATE);
 
   const supabaseRef = useRef<ReturnType<typeof createBrowserClient> | null>(null);
   const { parseCSV, parseXLSX } = useFileParser();
@@ -136,6 +146,10 @@ export function useImportFlow() {
     [uploadFile, createImport, parseCSV, parseXLSX, triggerServerParsing]
   );
 
+  const reset = useCallback(() => {
+    setState({ ...INITIAL_STATE });
+  }, []);
+
   // Mettre à jour le statut quand le polling retourne des données
   const getDisplayStatus = useCallback(() => {
     if (importStatus) {
@@ -155,5 +169,6 @@ export function useImportFlow() {
     startImport,
     importId: state.importId,
     filename: state.filename,
+    reset,
   };
 }

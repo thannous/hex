@@ -32,7 +32,30 @@ export function useFileParser() {
   });
 
   const workerRef = useRef<Worker | null>(null);
+  const workerTypeRef = useRef<'csv' | 'xlsx' | null>(null);
   const abortRef = useRef(false);
+
+  const getWorker = useCallback((type: 'csv' | 'xlsx') => {
+    if (workerRef.current && workerTypeRef.current && workerTypeRef.current !== type) {
+      workerRef.current.terminate();
+      workerRef.current = null;
+    }
+
+    if (!workerRef.current) {
+      workerRef.current = new Worker(
+        new URL(
+          type === 'csv'
+            ? '../workers/csv-parser.worker.ts'
+            : '../workers/xlsx-parser.worker.ts',
+          import.meta.url
+        ),
+        { type: 'module' }
+      );
+    }
+
+    workerTypeRef.current = type;
+    return workerRef.current;
+  }, []);
 
   const parseCSV = useCallback(
     async (file: File, config?: ParserConfig): Promise<ParseResult | null> => {
@@ -45,18 +68,12 @@ export function useFileParser() {
       abortRef.current = false;
 
       return new Promise((resolve) => {
-        // Créer worker si nécessaire
-        if (!workerRef.current) {
-          workerRef.current = new Worker(
-            new URL('../workers/csv-parser.worker.ts', import.meta.url),
-            { type: 'module' }
-          );
-        }
+        const worker = getWorker('csv');
 
         const allData: any[] = [];
         let totalRows = 0;
 
-        workerRef.current!.onmessage = (event) => {
+        worker.onmessage = (event) => {
           const { type, data, reason, error, rowCount, success } = event.data;
 
           if (type === 'chunk') {
@@ -90,7 +107,7 @@ export function useFileParser() {
           }
         };
 
-        workerRef.current!.onerror = (error) => {
+        worker.onerror = (error) => {
           setState({
             loading: false,
             progress: 0,
@@ -101,14 +118,14 @@ export function useFileParser() {
         };
 
         // Envoyer fichier au worker
-        workerRef.current!.postMessage({
+        worker.postMessage({
           type: 'parse',
           file,
           config: { header: true, skipEmptyLines: true, dynamicTyping: false },
         });
       });
     },
-    []
+    [getWorker]
   );
 
   const parseXLSX = useCallback(
@@ -122,15 +139,9 @@ export function useFileParser() {
       abortRef.current = false;
 
       return new Promise((resolve) => {
-        // Créer worker si nécessaire
-        if (!workerRef.current) {
-          workerRef.current = new Worker(
-            new URL('../workers/xlsx-parser.worker.ts', import.meta.url),
-            { type: 'module' }
-          );
-        }
+        const worker = getWorker('xlsx');
 
-        workerRef.current!.onmessage = (event) => {
+        worker.onmessage = (event) => {
           const { type, data, reason, error, rowCount, sheetName, columns, success } = event.data;
 
           if (type === 'fallback') {
@@ -162,7 +173,7 @@ export function useFileParser() {
           }
         };
 
-        workerRef.current!.onerror = (error) => {
+        worker.onerror = (error) => {
           setState({
             loading: false,
             progress: 0,
@@ -173,13 +184,13 @@ export function useFileParser() {
         };
 
         // Envoyer fichier au worker
-        workerRef.current!.postMessage({
+        worker.postMessage({
           type: 'parse',
           file,
         });
       });
     },
-    []
+    [getWorker]
   );
 
   const abort = useCallback(() => {
@@ -195,6 +206,7 @@ export function useFileParser() {
       workerRef.current.terminate();
       workerRef.current = null;
     }
+    workerTypeRef.current = null;
   }, []);
 
   return {
