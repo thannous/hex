@@ -16,9 +16,11 @@ import { trpc } from '@/lib/trpc';
 interface DataPreviewProps {
   importId: string;
   limit?: number;
+  // Optional: notify parent about detected columns
+  onColumnsLoaded?: (columns: string[]) => void;
 }
 
-export function DataPreview({ importId, limit = 10 }: DataPreviewProps) {
+export function DataPreview({ importId, limit = 10, onColumnsLoaded }: DataPreviewProps) {
   const [offset, setOffset] = useState(0);
   const [copiedColumn, setCopiedColumn] = useState<string | null>(null);
 
@@ -32,6 +34,15 @@ export function DataPreview({ importId, limit = 10 }: DataPreviewProps) {
   useEffect(() => {
     setOffset(0);
   }, [importId]);
+
+  // Propagate columns to parent when available/changed
+  useEffect(() => {
+    if (preview && Array.isArray(preview.columns) && preview.columns.length > 0) {
+      onColumnsLoaded?.(preview.columns);
+    }
+    // We intentionally depend on preview?.columns reference
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview?.columns]);
 
   const handleCopyColumn = (columnName: string) => {
     navigator.clipboard.writeText(columnName);

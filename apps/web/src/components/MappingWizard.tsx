@@ -220,7 +220,11 @@ export function MappingWizard({ tenantId, onCompleted }: MappingWizardProps) {
               <p className="text-gray-600">Review sample rows before mapping</p>
             </div>
 
-            <DataPreview importId={selectedImportId} limit={10} />
+            <DataPreview
+              importId={selectedImportId}
+              limit={10}
+              onColumnsLoaded={(cols) => setColumns(cols)}
+            />
 
             <div className="flex gap-4">
               <button
@@ -230,7 +234,7 @@ export function MappingWizard({ tenantId, onCompleted }: MappingWizardProps) {
                 ← Back
               </button>
               <button
-                onClick={() => handlePreviewComplete(columns.length > 0 ? columns : [])}
+                onClick={() => handlePreviewComplete(columns)}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
                 Next →
