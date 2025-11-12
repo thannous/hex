@@ -615,30 +615,245 @@ export const mappingsRouter = t.router({
       }
     }),
 
-  // Placeholder: Validate data
+  // Validate data against rules (Phase 4)
   validate: authedProcedure
     .input(ValidateInputSchema)
     .output(ValidateOutputSchema)
     .query(async ({ input, ctx }) => {
-      // Will be implemented in Phase 4 (validation engine)
-      return {
-        issues: [],
-        sampleSize: 0,
-        totalRows: 0,
-      };
+      const { supabase } = ctx;
+      const { importId, rules, sampleSize } = input;
+
+      try {
+        // Get total row count
+        const { count: totalRows } = await supabase
+          .from('dpgf_rows_raw')
+          .select('id', { count: 'exact' })
+          .eq('import_id', importId)
+          .eq('tenant_id', ctx.tenantId);
+
+        // Sample rows for validation (performance optimization)
+        const { data: sampleRows, error: rowError } = await supabase
+          .from('dpgf_rows_raw')
+          .select('raw_data, row_index')
+          .eq('import_id', importId)
+          .eq('tenant_id', ctx.tenantId)
+          .order('row_index')
+          .limit(sampleSize || 1000);
+
+        if (rowError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to fetch rows for validation: ${rowError.message}`,
+          });
+        }
+
+        const issues: z.infer<typeof z.lazy(() => z.array(z.object({ rowIndex: z.number(), field: z.string(), code: z.enum(['required', 'type', 'pattern', 'range', 'length']), message: z.string(), value: z.unknown().optional() })))> = [];
+
+        // Apply rules if provided
+        if (rules && rules.length > 0) {
+          for (const row of sampleRows || []) {
+            const rawData = row.raw_data || {};
+
+            for (const rule of rules) {
+              const value = rawData[rule.field];
+
+              // Check required
+              if (rule.required && (value === null || value === undefined || value === '')) {
+                issues.push({
+                  rowIndex: row.row_index,
+                  field: rule.field,
+                  code: 'required' as const,
+                  message: `${rule.field} is required`,
+                  value,
+                });
+                continue;
+              }
+
+              if (value === null || value === undefined || value === '') {
+                continue; // Skip other rules for empty values
+              }
+
+              // Check type
+              if (rule.type) {
+                let isValidType = true;
+                switch (rule.type) {
+                  case 'number':
+                    isValidType = !isNaN(Number(value));
+                    break;
+                  case 'date':
+                    isValidType = !isNaN(Date.parse(String(value)));
+                    break;
+                  case 'email':
+                    isValidType = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value));
+                    break;
+                  case 'currency':
+                    isValidType = !isNaN(Number(value)) && Number(value) >= 0;
+                    break;
+                }
+
+                if (!isValidType) {
+                  issues.push({
+                    rowIndex: row.row_index,
+                    field: rule.field,
+                    code: 'type' as const,
+                    message: `${rule.field} must be ${rule.type}`,
+                    value,
+                  });
+                }
+              }
+
+              // Check pattern
+              if (rule.pattern) {
+                const regex = new RegExp(rule.pattern);
+                if (!regex.test(String(value))) {
+                  issues.push({
+                    rowIndex: row.row_index,
+                    field: rule.field,
+                    code: 'pattern' as const,
+                    message: `${rule.field} does not match pattern ${rule.pattern}`,
+                    value,
+                  });
+                }
+              }
+
+              // Check length
+              const strValue = String(value);
+              if (rule.minLength && strValue.length < rule.minLength) {
+                issues.push({
+                  rowIndex: row.row_index,
+                  field: rule.field,
+                  code: 'length' as const,
+                  message: `${rule.field} must be at least ${rule.minLength} characters`,
+                  value,
+                });
+              }
+
+              if (rule.maxLength && strValue.length > rule.maxLength) {
+                issues.push({
+                  rowIndex: row.row_index,
+                  field: rule.field,
+                  code: 'length' as const,
+                  message: `${rule.field} must be at most ${rule.maxLength} characters`,
+                  value,
+                });
+              }
+
+              // Check range (for numbers)
+              if (rule.type === 'number' || rule.type === 'currency') {
+                const numValue = Number(value);
+                if (rule.min !== undefined && numValue < rule.min) {
+                  issues.push({
+                    rowIndex: row.row_index,
+                    field: rule.field,
+                    code: 'range' as const,
+                    message: `${rule.field} must be at least ${rule.min}`,
+                    value,
+                  });
+                }
+
+                if (rule.max !== undefined && numValue > rule.max) {
+                  issues.push({
+                    rowIndex: row.row_index,
+                    field: rule.field,
+                    code: 'range' as const,
+                    message: `${rule.field} must be at most ${rule.max}`,
+                    value,
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        return {
+          issues: issues.slice(0, 100), // Limit to 100 issues for UI
+          sampleSize: sampleRows?.length || 0,
+          totalRows: totalRows || 0,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to validate data',
+        });
+      }
     }),
 
-  // Placeholder: Detect duplicates
+  // Detect duplicate rows (Phase 4)
   getDuplicates: authedProcedure
     .input(GetDuplicatesSchema)
     .output(DuplicatesOutputSchema)
     .query(async ({ input, ctx }) => {
-      // Will be implemented in Phase 4 (duplicate detection)
-      return {
-        duplicates: [],
-        sampleSize: 0,
-        totalRows: 0,
-      };
+      const { supabase } = ctx;
+      const { importId, keys, sampleSize } = input;
+
+      try {
+        // Get total row count
+        const { count: totalRows } = await supabase
+          .from('dpgf_rows_raw')
+          .select('id', { count: 'exact' })
+          .eq('import_id', importId)
+          .eq('tenant_id', ctx.tenantId);
+
+        // Sample rows for duplicate detection
+        const { data: sampleRows, error: rowError } = await supabase
+          .from('dpgf_rows_raw')
+          .select('raw_data, row_index')
+          .eq('import_id', importId)
+          .eq('tenant_id', ctx.tenantId)
+          .order('row_index')
+          .limit(sampleSize || 5000);
+
+        if (rowError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to fetch rows: ${rowError.message}`,
+          });
+        }
+
+        // Group by key values to find duplicates
+        const duplicateMap = new Map<string, number[]>();
+
+        for (const row of sampleRows || []) {
+          const rawData = row.raw_data || {};
+
+          for (const key of keys) {
+            const keyValue = String(rawData[key] || '');
+            const mapKey = `${key}::${keyValue}`;
+
+            if (!duplicateMap.has(mapKey)) {
+              duplicateMap.set(mapKey, []);
+            }
+
+            duplicateMap.get(mapKey)!.push(row.row_index);
+          }
+        }
+
+        // Filter to only groups with duplicates
+        const duplicates = Array.from(duplicateMap.entries())
+          .filter(([_, indices]) => indices.length > 1)
+          .map(([mapKey, indices]) => {
+            const [key, keyValue] = mapKey.split('::');
+            return {
+              key,
+              keyValue,
+              rowIndices: indices,
+              count: indices.length,
+            };
+          });
+
+        return {
+          duplicates: duplicates.slice(0, 50), // Limit to 50 for UI
+          sampleSize: sampleRows?.length || 0,
+          totalRows: totalRows || 0,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to detect duplicates',
+        });
+      }
     }),
 });
 
