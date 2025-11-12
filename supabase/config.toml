@@ -1,26 +1,69 @@
 project_id = "hex-ops"
 
 [api]
-  port = 54321
-  schemas = ["public", "storage", "graphql_public"]
-  extra_search_path = ["public", "extensions"]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
 
 [db]
-  port = 54322
-  major_version = 15
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+enabled = true
+sql_paths = []
+
+[realtime]
+enabled = false
+ip_version = "IPv4"
 
 [studio]
-  port = 54323
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+openai_api_key = "env(OPENAI_API_KEY)"
 
 [inbucket]
-  port = 54324
-
-[edge_runtime]
-  port = 54325
+enabled = true
+port = 54324
 
 [storage]
-  file_size_limit = 524288000 # 500 MB
-  [storage.buckets.imports]
-    public = false
-  [storage.buckets.exports]
-    public = false
+enabled = true
+file_size_limit = "500MiB"
+
+[storage.buckets.imports]
+public = false
+
+[storage.buckets.exports]
+public = false
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["https://127.0.0.1:3000"]
+jwt_expiry = 3600
+
+[analytics]
+enabled = true
+port = 54327
+backend = "postgres"
+
+[edge_runtime]
+enabled = true
+policy = "per_worker"
+inspector_port = 8083
+deno_version = 2

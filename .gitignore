@@ -33,6 +33,8 @@ Thumbs.db
 # Supabase
 supabase/.env.local
 supabase/.env
+supabase/.temp/
+supabase/.branches/
 
 # Mobile
 .expo/
