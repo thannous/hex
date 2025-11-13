@@ -55,3 +55,12 @@ yarn-error.log*
 *.pid
 *.seed
 *.pid.lock
+ 
+# Test reports and artifacts
+# Playwright and custom reports (workspace-wide)
+playwright-report/
+**/playwright-report/
+reports/
+**/reports/
+test-results/
+**/test-results/
