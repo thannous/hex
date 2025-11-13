@@ -3,9 +3,7 @@
     "name": "HEX Ops",
     "slug": "hex-ops",
     "version": "0.1.0",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hexops.mobile"

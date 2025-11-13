@@ -8,6 +8,7 @@ import {
   detectDuplicateGroups,
   expandSuggestionsForColumns,
   normalizeSourceColumn,
+  normalizeSupplierName,
 } from './lib/mappingUtils';
 import {
   LoginInputSchema,
@@ -453,7 +454,8 @@ export const mappingsRouter = t.router({
     .input(CreateMappingSchema)
     .mutation(async ({ input, ctx }) => {
       const { supabase } = ctx;
-      const { importId, mappings } = input;
+      const { importId, mappings, supplier } = input;
+      const supplierName = normalizeSupplierName(supplier);
 
       try {
         // Upsert mappings for this import
@@ -507,10 +509,29 @@ export const mappingsRouter = t.router({
           });
         }
 
+        // Fire-and-forget memory updates per mapping (best effort)
+        await Promise.all(
+          mappings.map(async (mapping) => {
+            const { error: memoryError } = await supabase.rpc('increment_mapping_memory', {
+              p_tenant_id: ctx.tenantId,
+              p_supplier: supplierName,
+              p_source_column_original: mapping.sourceColumn,
+              p_target_field: mapping.targetField,
+            });
+
+            if (memoryError) {
+              console.warn(
+                `[mappings.create] Failed to increment mapping memory for ${mapping.sourceColumn}: ${memoryError.message}`
+              );
+            }
+          })
+        );
+
         return {
           ok: true,
           version: nextVersion,
           count: mappings.length,
+          supplier: supplierName,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -528,6 +549,7 @@ export const mappingsRouter = t.router({
     .query(async ({ input, ctx }) => {
       const { supabase } = ctx;
       const { supplier, sourceColumns } = input;
+      const supplierName = normalizeSupplierName(supplier);
 
       try {
         // Query mapping_memory for suggestions
@@ -540,7 +562,7 @@ export const mappingsRouter = t.router({
             'source_column_original, source_column_normalized, target_field, confidence, use_count, last_used_at'
           )
           .eq('tenant_id', ctx.tenantId)
-          .eq('supplier', supplier)
+          .eq('supplier', supplierName)
           .in('source_column_normalized', normalizedColumns)
           .order('confidence', { ascending: false });
 
@@ -566,14 +588,14 @@ export const mappingsRouter = t.router({
     .input(GetTemplatesSchema)
     .query(async ({ input, ctx }) => {
       const { supabase } = ctx;
-      const { supplier } = input;
+      const supplierName = normalizeSupplierName(input.supplier);
 
       try {
         const { data: templates, error } = await supabase
           .from('mapping_templates')
           .select('id, supplier_name, mappings, version, description, created_at')
           .eq('tenant_id', ctx.tenantId)
-          .eq('supplier_name', supplier)
+          .eq('supplier_name', supplierName)
           .order('version', { ascending: false });
 
         if (error) {
@@ -605,6 +627,7 @@ export const mappingsRouter = t.router({
     .input(SaveTemplateSchema)
     .mutation(async ({ input, ctx }) => {
       const { supabase } = ctx;
+      const supplierName = normalizeSupplierName(input.supplier);
 
       try {
         let resolvedVersion = input.version;
@@ -614,7 +637,7 @@ export const mappingsRouter = t.router({
             .from('mapping_templates')
             .select('version')
             .eq('tenant_id', ctx.tenantId)
-            .eq('supplier_name', input.supplier)
+            .eq('supplier_name', supplierName)
             .order('version', { ascending: false })
             .limit(1);
 
@@ -633,7 +656,7 @@ export const mappingsRouter = t.router({
           .from('mapping_templates')
           .insert({
             tenant_id: ctx.tenantId,
-            supplier_name: input.supplier,
+            supplier_name: supplierName,
             mappings: input.mappings,
             description: input.description,
             version: resolvedVersion,

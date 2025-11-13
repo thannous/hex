@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ColumnMapper } from '@/components/ColumnMapper';
 import type { ColumnMapping, Suggestion } from '@hex/api';
 
@@ -34,9 +34,35 @@ type Step = 'mapping' | 'review';
 
 const REQUIRED_FIELDS = ['hex_code', 'designation'];
 
+const PREFILL_MAPPINGS: ColumnMapping[] = [
+  {
+    sourceColumn: 'HEX Code',
+    targetField: 'hex_code',
+    fieldType: 'hex_code',
+    mappingOrder: 0,
+  },
+  {
+    sourceColumn: 'Designation',
+    targetField: 'designation',
+    fieldType: 'text',
+    mappingOrder: 1,
+  },
+  {
+    sourceColumn: 'Matière',
+    targetField: 'matiere',
+    fieldType: 'text',
+    mappingOrder: 2,
+  },
+];
+
 export function MappingWizardTestHarness() {
   const [step, setStep] = useState<Step>('mapping');
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   const hasRequiredFields = useMemo(
     () =>
@@ -60,6 +86,18 @@ export function MappingWizardTestHarness() {
 
         {step === 'mapping' && (
           <div className="space-y-4" data-testid="mapping-step">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                onClick={() => setMappings(PREFILL_MAPPINGS)}
+                data-testid="prefill-mappings"
+                data-hydrated={isHydrated ? 'true' : 'false'}
+                disabled={!isHydrated}
+              >
+                Prefill sample mappings
+              </button>
+            </div>
             <ColumnMapper
               columns={SAMPLE_COLUMNS}
               mappings={mappings}

@@ -22,25 +22,28 @@ interface MappingWizardProps {
   onCompleted?: (importId: string, mappingVersion: number) => void;
 }
 
+const DEFAULT_SUPPLIER = 'General';
+
 type Step = 'select' | 'preview' | 'mapping' | 'review' | 'success';
 
 export function MappingWizard({ tenantId: _tenantId, onCompleted }: MappingWizardProps) {
   const [step, setStep] = useState<Step>('select');
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
-  const [selectedSupplier, setSelectedSupplier] = useState<string>('');
+  const [selectedSupplier, setSelectedSupplier] = useState<string>(DEFAULT_SUPPLIER);
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
+  const normalizedSupplier = selectedSupplier.trim() || DEFAULT_SUPPLIER;
 
   // Fetch imports list
   const { data: imports, isLoading: importsLoading } = trpc.imports.list.useQuery(undefined, {
     refetchOnWindowFocus: false,
   });
 
-  const shouldFetchSuggestions = step === 'mapping' && !!selectedSupplier && columns.length > 0;
+  const shouldFetchSuggestions = step === 'mapping' && columns.length > 0 && !!normalizedSupplier;
   const { data: fetchedSuggestions } = trpc.mappings.getSuggestions.useQuery(
     {
-      supplier: selectedSupplier,
+      supplier: normalizedSupplier,
       sourceColumns: columns,
     },
     {
@@ -85,6 +88,7 @@ export function MappingWizard({ tenantId: _tenantId, onCompleted }: MappingWizar
     try {
       const result = await createMapping({
         importId: selectedImportId,
+        supplier: normalizedSupplier,
         mappings,
       });
 
@@ -203,7 +207,7 @@ export function MappingWizard({ tenantId: _tenantId, onCompleted }: MappingWizar
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Optional: Helps get smarter suggestions based on historical mappings
+                Helps obtenir des suggestions + alimente la mémoire (défaut : {DEFAULT_SUPPLIER})
               </p>
             </div>
           </div>
@@ -336,6 +340,7 @@ export function MappingWizard({ tenantId: _tenantId, onCompleted }: MappingWizar
                 // Reset wizard for next import
                 setStep('select');
                 setSelectedImportId(null);
+                setSelectedSupplier(DEFAULT_SUPPLIER);
                 setMappings([]);
                 setSuggestions([]);
                 setColumns([]);

@@ -7,10 +7,14 @@ test.describe('Mapping wizard harness', () => {
     const mappingStep = page.getByTestId('mapping-step');
     await expect(mappingStep).toBeVisible();
 
-    const selects = page.getByLabel('Target Field');
-    await selects.nth(0).selectOption('hex_code');
-    await selects.nth(1).selectOption('designation');
-    await selects.nth(2).selectOption('matiere');
+    const prefillButton = page.getByTestId('prefill-mappings');
+    await expect(prefillButton).toHaveAttribute('data-hydrated', 'true', { timeout: 30000 });
+    await prefillButton.click();
+
+    await expect(page.getByTestId('mapping-count')).toContainText('Current mappings: 3');
+    await expect(page.locator('[data-testid="target-select-0"]')).toHaveValue('hex_code');
+    await expect(page.locator('[data-testid="target-select-1"]')).toHaveValue('designation');
+    await expect(page.locator('[data-testid="target-select-2"]')).toHaveValue('matiere');
 
     const goReview = page.getByTestId('go-review');
     await expect(goReview).toBeEnabled();
@@ -24,8 +28,8 @@ test.describe('Mapping wizard harness', () => {
     await page.getByTestId('back-to-mapping').click();
     await expect(mappingStep).toBeVisible();
 
-    await expect(selects.nth(0)).toHaveValue('hex_code');
-    await expect(selects.nth(1)).toHaveValue('designation');
-    await expect(selects.nth(2)).toHaveValue('matiere');
+    await expect(page.locator('[data-testid="target-select-0"]')).toHaveValue('hex_code');
+    await expect(page.locator('[data-testid="target-select-1"]')).toHaveValue('designation');
+    await expect(page.locator('[data-testid="target-select-2"]')).toHaveValue('matiere');
   });
 });

@@ -6,6 +6,10 @@ HEX Ops is a Turborepo monorepo. Customer-facing clients reside in `apps/web` (N
 ## Build, Test, and Development Commands
 `npm run dev` launches all workspace dev servers except mobile; use `npm run dev:all` to include Expo. `npm run build` and `npm run type-check` must stay green before a PR. Run `npm run lint` and `npm run format` (ESLint + Prettier) before committing. Targeted workspaces run via Turbo filters, e.g., `turbo run dev --filter=@hex/web`. Supabase local services start with `npx supabase start` inside `supabase/`.
 
+- Web E2E (Playwright): `npm run --workspace @hex/web test:e2e`
+- Web E2E headed (visible browser): `npm run --workspace @hex/web test:e2e:headed`
+- Playwright config lives at `apps/web/playwright.config.ts` and uses friendly defaults: JSON + HTML reporters, globalTimeout, and artifacts (trace on first retry, screenshots/videos on failure). Override base URL with `BASE_URL` if needed.
+
 ## Coding Style & Naming Conventions
 The repo is TypeScript-first with strict null checks and 2-space indentation. Prefer named exports and colocate UI logic under `app/`, `components/`, or `lib/` folders. React components use PascalCase, files that export hooks use `use-*.ts`, and Tailwind utility classes should favor shadcn/ui tokens. Run `npm run lint` to enforce ESLint rules (Next.js + Expo presets) and `npm run format` for Prettier; skip manual formatting.
 

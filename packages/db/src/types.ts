@@ -779,6 +779,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      increment_mapping_memory: {
+        Args: {
+          p_tenant_id: string
+          p_supplier: string
+          p_source_column_original: string
+          p_target_field: string
+        }
+        Returns: null
+      }
       is_admin_of: { Args: { tenant: string }; Returns: boolean }
       is_member_of: { Args: { tenant: string }; Returns: boolean }
     }

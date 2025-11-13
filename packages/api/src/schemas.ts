@@ -95,6 +95,7 @@ export const ColumnMappingSchema = z.object({
 // Create mapping for an import
 export const CreateMappingSchema = z.object({
   importId: z.string().uuid(),
+  supplier: z.string().min(1).max(255).default('General'),
   mappings: z.array(ColumnMappingSchema).min(1, 'At least one mapping required'),
 });
 

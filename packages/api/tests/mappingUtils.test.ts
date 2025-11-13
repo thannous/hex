@@ -5,6 +5,7 @@ import {
   detectDuplicateGroups,
   expandSuggestionsForColumns,
   normalizeSourceColumn,
+  normalizeSupplierName,
   type RawImportRow,
   type SuggestionRow,
 } from '../src/lib/mappingUtils';
@@ -14,6 +15,14 @@ describe('normalizeSourceColumn', () => {
   it('removes accents, case, and whitespace', () => {
     expect(normalizeSourceColumn('  Héx Code  ')).toBe('hex code');
     expect(normalizeSourceColumn('Matière')).toBe('matiere');
+  });
+});
+
+describe('normalizeSupplierName', () => {
+  it('trims spaces and falls back to General', () => {
+    expect(normalizeSupplierName('   Supplier  ABC  ')).toBe('Supplier ABC');
+    expect(normalizeSupplierName('')).toBe('General');
+    expect(normalizeSupplierName(undefined)).toBe('General');
   });
 });
 

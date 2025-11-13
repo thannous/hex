@@ -25,6 +25,15 @@ export const normalizeSourceColumn = (value: string): string =>
     .toLowerCase()
     .trim();
 
+const DEFAULT_SUPPLIER = 'General';
+
+export const normalizeSupplierName = (value?: string | null): string => {
+  if (!value) return DEFAULT_SUPPLIER;
+  const trimmed = value.trim();
+  if (!trimmed) return DEFAULT_SUPPLIER;
+  return trimmed.replace(/\s+/g, ' ');
+};
+
 export const asRecord = (value: unknown): Record<string, unknown> => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>;
