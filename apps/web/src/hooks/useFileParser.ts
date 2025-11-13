@@ -10,7 +10,7 @@ interface ParserConfig {
 }
 
 interface ParseResult {
-  data: any[];
+  data: Record<string, unknown>[];
   rowCount: number;
   columns?: string[];
   sheetName?: string;
@@ -44,9 +44,7 @@ export function useFileParser() {
     if (!workerRef.current) {
       workerRef.current = new Worker(
         new URL(
-          type === 'csv'
-            ? '../workers/csv-parser.worker.ts'
-            : '../workers/xlsx-parser.worker.ts',
+          type === 'csv' ? '../workers/csv-parser.worker.ts' : '../workers/xlsx-parser.worker.ts',
           import.meta.url
         ),
         { type: 'module' }
@@ -70,7 +68,7 @@ export function useFileParser() {
       return new Promise((resolve) => {
         const worker = getWorker('csv');
 
-        const allData: any[] = [];
+        const allData: Record<string, unknown>[] = [];
         let totalRows = 0;
 
         worker.onmessage = (event) => {
@@ -198,7 +196,12 @@ export function useFileParser() {
       workerRef.current.postMessage({ type: 'abort' });
     }
     abortRef.current = true;
-    setState({ loading: false, progress: 0, error: 'Parsing aborted', shouldFallbackToServer: false });
+    setState({
+      loading: false,
+      progress: 0,
+      error: 'Parsing aborted',
+      shouldFallbackToServer: false,
+    });
   }, []);
 
   const cleanup = useCallback(() => {

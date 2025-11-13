@@ -158,7 +158,7 @@ export const ValidationRuleSchema = z.object({
   field: z.string(),
   required: z.boolean().default(false),
   type: FieldTypeSchema.optional(),
-  pattern: z.string().regex(/^[a-zA-Z0-9.\\-*+?^${}()|[\]\\]+$/).optional(),
+  pattern: z.string().regex(/^[a-zA-Z0-9._*+?^${}()|\[\]\\-]+$/).optional(),
   minLength: z.number().int().nonnegative().optional(),
   maxLength: z.number().int().positive().optional(),
   min: z.number().optional(),

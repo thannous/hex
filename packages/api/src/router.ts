@@ -2,6 +2,14 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import type { RequestContext, TenantContext } from './types';
 import {
+  applyValidationRules,
+  asRecord,
+  createNormalizedColumnsMap,
+  detectDuplicateGroups,
+  expandSuggestionsForColumns,
+  normalizeSourceColumn,
+} from './lib/mappingUtils';
+import {
   LoginInputSchema,
   SignupInputSchema,
   CreateImportSchema,
@@ -423,8 +431,8 @@ export const mappingsRouter = t.router({
 
         // Extract columns from first row and flatten data
         const parsedRows = rows || [];
-        const columns = parsedRows.length > 0 ? Object.keys(parsedRows[0].raw_data || {}) : [];
-        const flattenedRows = parsedRows.map((r) => r.raw_data || {});
+        const flattenedRows: Record<string, unknown>[] = parsedRows.map((r) => asRecord(r.raw_data));
+        const columns = flattenedRows.length > 0 ? Object.keys(flattenedRows[0]) : [];
 
         return {
           columns,
@@ -471,16 +479,37 @@ export const mappingsRouter = t.router({
           });
         }
 
-        // Update import status to draft
-        await supabase
+        const { data: existingImport, error: importError } = await supabase
           .from('dpgf_imports')
-          .update({ mapping_status: 'draft', mapping_version: 1 })
+          .select('mapping_version')
           .eq('id', importId)
-          .catch(() => {});
+          .eq('tenant_id', ctx.tenantId)
+          .single();
+
+        if (importError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to load import for versioning: ${importError.message}`,
+          });
+        }
+
+        const nextVersion = (existingImport?.mapping_version ?? 0) + 1;
+
+        const { error: statusError } = await supabase
+          .from('dpgf_imports')
+          .update({ mapping_status: 'draft', mapping_version: nextVersion })
+          .eq('id', importId);
+
+        if (statusError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to update mapping version: ${statusError.message}`,
+          });
+        }
 
         return {
           ok: true,
-          version: 1,
+          version: nextVersion,
           count: mappings.length,
         };
       } catch (error) {
@@ -502,15 +531,17 @@ export const mappingsRouter = t.router({
 
       try {
         // Query mapping_memory for suggestions
+        const normalizedColumnsMap = createNormalizedColumnsMap(sourceColumns);
+        const normalizedColumns = Array.from(normalizedColumnsMap.keys());
+
         const { data: suggestions, error } = await supabase
           .from('mapping_memory')
-          .select('source_column_original, target_field, confidence, use_count, last_used_at')
+          .select(
+            'source_column_original, source_column_normalized, target_field, confidence, use_count, last_used_at'
+          )
           .eq('tenant_id', ctx.tenantId)
           .eq('supplier', supplier)
-          .in(
-            'source_column_normalized',
-            sourceColumns.map((c) => c.toLowerCase().trim())
-          )
+          .in('source_column_normalized', normalizedColumns)
           .order('confidence', { ascending: false });
 
         if (error) {
@@ -520,13 +551,7 @@ export const mappingsRouter = t.router({
           });
         }
 
-        return (suggestions || []).map((s) => ({
-          sourceColumn: s.source_column_original,
-          targetField: s.target_field,
-          confidence: s.confidence || 0.5,
-          source: 'memory' as const,
-          useCount: s.use_count,
-        }));
+        return expandSuggestionsForColumns(normalizedColumnsMap, suggestions || []);
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -564,7 +589,7 @@ export const mappingsRouter = t.router({
           mappings: t.mappings || [],
           version: t.version,
           description: t.description,
-          createdAt: new Date(t.created_at),
+          createdAt: new Date(t.created_at ?? new Date().toISOString()),
         }));
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -582,6 +607,28 @@ export const mappingsRouter = t.router({
       const { supabase } = ctx;
 
       try {
+        let resolvedVersion = input.version;
+
+        if (!resolvedVersion) {
+          const { data: latestTemplates, error: latestError } = await supabase
+            .from('mapping_templates')
+            .select('version')
+            .eq('tenant_id', ctx.tenantId)
+            .eq('supplier_name', input.supplier)
+            .order('version', { ascending: false })
+            .limit(1);
+
+          if (latestError) {
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: `Failed to fetch template version: ${latestError.message}`,
+            });
+          }
+
+          const lastVersion = latestTemplates?.[0]?.version ?? 0;
+          resolvedVersion = lastVersion + 1;
+        }
+
         const { data, error } = await supabase
           .from('mapping_templates')
           .insert({
@@ -589,7 +636,7 @@ export const mappingsRouter = t.router({
             supplier_name: input.supplier,
             mappings: input.mappings,
             description: input.description,
-            version: input.version || 1,
+            version: resolvedVersion,
             created_by: ctx.userId,
           })
           .select()
@@ -647,123 +694,7 @@ export const mappingsRouter = t.router({
           });
         }
 
-        const issues: z.infer<typeof z.lazy(() => z.array(z.object({ rowIndex: z.number(), field: z.string(), code: z.enum(['required', 'type', 'pattern', 'range', 'length']), message: z.string(), value: z.unknown().optional() })))> = [];
-
-        // Apply rules if provided
-        if (rules && rules.length > 0) {
-          for (const row of sampleRows || []) {
-            const rawData = row.raw_data || {};
-
-            for (const rule of rules) {
-              const value = rawData[rule.field];
-
-              // Check required
-              if (rule.required && (value === null || value === undefined || value === '')) {
-                issues.push({
-                  rowIndex: row.row_index,
-                  field: rule.field,
-                  code: 'required' as const,
-                  message: `${rule.field} is required`,
-                  value,
-                });
-                continue;
-              }
-
-              if (value === null || value === undefined || value === '') {
-                continue; // Skip other rules for empty values
-              }
-
-              // Check type
-              if (rule.type) {
-                let isValidType = true;
-                switch (rule.type) {
-                  case 'number':
-                    isValidType = !isNaN(Number(value));
-                    break;
-                  case 'date':
-                    isValidType = !isNaN(Date.parse(String(value)));
-                    break;
-                  case 'email':
-                    isValidType = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value));
-                    break;
-                  case 'currency':
-                    isValidType = !isNaN(Number(value)) && Number(value) >= 0;
-                    break;
-                }
-
-                if (!isValidType) {
-                  issues.push({
-                    rowIndex: row.row_index,
-                    field: rule.field,
-                    code: 'type' as const,
-                    message: `${rule.field} must be ${rule.type}`,
-                    value,
-                  });
-                }
-              }
-
-              // Check pattern
-              if (rule.pattern) {
-                const regex = new RegExp(rule.pattern);
-                if (!regex.test(String(value))) {
-                  issues.push({
-                    rowIndex: row.row_index,
-                    field: rule.field,
-                    code: 'pattern' as const,
-                    message: `${rule.field} does not match pattern ${rule.pattern}`,
-                    value,
-                  });
-                }
-              }
-
-              // Check length
-              const strValue = String(value);
-              if (rule.minLength && strValue.length < rule.minLength) {
-                issues.push({
-                  rowIndex: row.row_index,
-                  field: rule.field,
-                  code: 'length' as const,
-                  message: `${rule.field} must be at least ${rule.minLength} characters`,
-                  value,
-                });
-              }
-
-              if (rule.maxLength && strValue.length > rule.maxLength) {
-                issues.push({
-                  rowIndex: row.row_index,
-                  field: rule.field,
-                  code: 'length' as const,
-                  message: `${rule.field} must be at most ${rule.maxLength} characters`,
-                  value,
-                });
-              }
-
-              // Check range (for numbers)
-              if (rule.type === 'number' || rule.type === 'currency') {
-                const numValue = Number(value);
-                if (rule.min !== undefined && numValue < rule.min) {
-                  issues.push({
-                    rowIndex: row.row_index,
-                    field: rule.field,
-                    code: 'range' as const,
-                    message: `${rule.field} must be at least ${rule.min}`,
-                    value,
-                  });
-                }
-
-                if (rule.max !== undefined && numValue > rule.max) {
-                  issues.push({
-                    rowIndex: row.row_index,
-                    field: rule.field,
-                    code: 'range' as const,
-                    message: `${rule.field} must be at most ${rule.max}`,
-                    value,
-                  });
-                }
-              }
-            }
-          }
-        }
+        const issues = applyValidationRules(sampleRows || [], rules);
 
         return {
           issues: issues.slice(0, 100), // Limit to 100 issues for UI
@@ -811,36 +742,7 @@ export const mappingsRouter = t.router({
           });
         }
 
-        // Group by key values to find duplicates
-        const duplicateMap = new Map<string, number[]>();
-
-        for (const row of sampleRows || []) {
-          const rawData = row.raw_data || {};
-
-          for (const key of keys) {
-            const keyValue = String(rawData[key] || '');
-            const mapKey = `${key}::${keyValue}`;
-
-            if (!duplicateMap.has(mapKey)) {
-              duplicateMap.set(mapKey, []);
-            }
-
-            duplicateMap.get(mapKey)!.push(row.row_index);
-          }
-        }
-
-        // Filter to only groups with duplicates
-        const duplicates = Array.from(duplicateMap.entries())
-          .filter(([_, indices]) => indices.length > 1)
-          .map(([mapKey, indices]) => {
-            const [key, keyValue] = mapKey.split('::');
-            return {
-              key,
-              keyValue,
-              rowIndices: indices,
-              count: indices.length,
-            };
-          });
+        const duplicates = detectDuplicateGroups(sampleRows || [], keys);
 
         return {
           duplicates: duplicates.slice(0, 50), // Limit to 50 for UI

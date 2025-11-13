@@ -12,7 +12,7 @@ interface ImportsListProps {
   tenantId: string;
 }
 
-export function ImportsList({ tenantId }: ImportsListProps) {
+export function ImportsList({ tenantId: _tenantId }: ImportsListProps) {
   // Requête avec polling automatique toutes les 5 secondes
   const { data: imports, isLoading } = trpc.imports.list.useQuery(undefined, {
     refetchInterval: 5000, // Polling toutes les 5s
@@ -72,21 +72,11 @@ export function ImportsList({ tenantId }: ImportsListProps) {
       <table className="min-w-full divide-y divide-gray-300">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-              Filename
-            </th>
-            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-              Status
-            </th>
-            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-              Rows
-            </th>
-            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-              Created
-            </th>
-            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-              Actions
-            </th>
+            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Filename</th>
+            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
+            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Rows</th>
+            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Created</th>
+            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 bg-white">
@@ -96,7 +86,9 @@ export function ImportsList({ tenantId }: ImportsListProps) {
                 {imp.filename}
               </td>
               <td className="whitespace-nowrap px-6 py-4 text-sm">
-                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${getStatusColor(imp.status)}`}>
+                <span
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${getStatusColor(imp.status)}`}
+                >
                   {getStatusLabel(imp.status)}
                 </span>
               </td>
@@ -108,13 +100,9 @@ export function ImportsList({ tenantId }: ImportsListProps) {
               </td>
               <td className="whitespace-nowrap px-6 py-4 text-sm">
                 {imp.status === 'parsed' ? (
-                  <button className="text-blue-600 hover:text-blue-900">
-                    View Mapping
-                  </button>
+                  <button className="text-blue-600 hover:text-blue-900">View Mapping</button>
                 ) : imp.status === 'failed' ? (
-                  <button className="text-gray-600 hover:text-gray-900">
-                    Retry
-                  </button>
+                  <button className="text-gray-600 hover:text-gray-900">Retry</button>
                 ) : (
                   <span className="text-gray-400">—</span>
                 )}

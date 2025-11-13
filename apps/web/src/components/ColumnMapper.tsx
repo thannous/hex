@@ -12,11 +12,12 @@
  * - Visual feedback for required fields
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ColumnMapping, FieldType } from '@hex/api';
 
 interface ColumnMapperProps {
   columns: string[];
+  mappings: ColumnMapping[];
   onMappingsChange: (mappings: ColumnMapping[]) => void;
   catalogueFields?: string[];
   suggestions?: Array<{
@@ -53,30 +54,40 @@ const REQUIRED_FIELDS = ['hex_code', 'designation'];
 
 export function ColumnMapper({
   columns,
+  mappings,
   onMappingsChange,
   catalogueFields = CATALOGUE_FIELDS,
   suggestions,
 }: ColumnMapperProps) {
-  const [mappings, setMappings] = useState<Map<string, ColumnMapping>>(new Map());
   const [searchField, setSearchField] = useState('');
 
+  const mappingsMap = useMemo(() => {
+    return new Map(mappings.map((mapping) => [mapping.sourceColumn, mapping] as const));
+  }, [mappings]);
+
+  const toSortedArray = (map: Map<string, ColumnMapping>) =>
+    Array.from(map.values()).sort((a, b) => a.mappingOrder - b.mappingOrder);
+
   const handleMapColumn = (sourceColumn: string, targetField: string) => {
-    const newMappings = new Map(mappings);
+    const newMappings = new Map(mappingsMap);
     const existingMapping = newMappings.get(sourceColumn);
+    const highestOrder =
+      mappingsMap.size === 0
+        ? -1
+        : Math.max(...Array.from(mappingsMap.values()).map((m) => m.mappingOrder));
 
     newMappings.set(sourceColumn, {
       sourceColumn,
       targetField,
       fieldType: existingMapping?.fieldType || 'text',
-      mappingOrder: existingMapping?.mappingOrder || Array.from(newMappings.keys()).length,
+      mappingOrder: existingMapping?.mappingOrder ?? highestOrder + 1,
     });
 
-    setMappings(newMappings);
-    onMappingsChange(Array.from(newMappings.values()).sort((a, b) => a.mappingOrder - b.mappingOrder));
+    onMappingsChange(toSortedArray(newMappings));
   };
 
   const handleFieldTypeChange = (sourceColumn: string, fieldType: FieldType) => {
-    const newMappings = new Map(mappings);
+    const newMappings = new Map(mappingsMap);
     const mapping = newMappings.get(sourceColumn);
 
     if (mapping) {
@@ -85,18 +96,14 @@ export function ColumnMapper({
         fieldType,
       });
 
-      setMappings(newMappings);
-      onMappingsChange(
-        Array.from(newMappings.values()).sort((a, b) => a.mappingOrder - b.mappingOrder)
-      );
+      onMappingsChange(toSortedArray(newMappings));
     }
   };
 
   const handleUnmapColumn = (sourceColumn: string) => {
-    const newMappings = new Map(mappings);
+    const newMappings = new Map(mappingsMap);
     newMappings.delete(sourceColumn);
-    setMappings(newMappings);
-    onMappingsChange(Array.from(newMappings.values()));
+    onMappingsChange(toSortedArray(newMappings));
   };
 
   // Get suggestion for a source column
@@ -109,9 +116,9 @@ export function ColumnMapper({
     field.toLowerCase().includes(searchField.toLowerCase())
   );
 
-  const mappedFieldsCount = mappings.size;
+  const mappedFieldsCount = mappingsMap.size;
   const requiredFieldsMapped = REQUIRED_FIELDS.every((field) =>
-    Array.from(mappings.values()).some((m) => m.targetField === field)
+    Array.from(mappingsMap.values()).some((m) => m.targetField === field)
   );
 
   return (
@@ -123,15 +130,15 @@ export function ColumnMapper({
           <p className="text-sm text-gray-500">
             Map {mappedFieldsCount}/{columns.length} columns
             {!requiredFieldsMapped && (
-              <span className="text-orange-600 ml-2">
-                (Required fields: HEX code, Designation)
-              </span>
+              <span className="text-orange-600 ml-2">(Required fields: HEX code, Designation)</span>
             )}
           </p>
         </div>
-        <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-          requiredFieldsMapped ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-        }`}>
+        <div
+          className={`px-3 py-1 rounded-full text-sm font-medium ${
+            requiredFieldsMapped ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+          }`}
+        >
           {requiredFieldsMapped ? '✓ Ready' : 'Missing fields'}
         </div>
       </div>
@@ -150,12 +157,10 @@ export function ColumnMapper({
       {/* Mapping list */}
       <div className="space-y-3">
         {columns.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            No columns to map
-          </div>
+          <div className="text-center py-8 text-gray-500">No columns to map</div>
         ) : (
           columns.map((sourceColumn, index) => {
-            const mapping = mappings.get(sourceColumn);
+            const mapping = mappingsMap.get(sourceColumn);
             const suggestion = getSuggestion(sourceColumn);
             const targetField = mapping?.targetField || '';
             const isRequired = REQUIRED_FIELDS.includes(targetField);
@@ -195,11 +200,18 @@ export function ColumnMapper({
 
                     {/* Target field selector */}
                     <div className="space-y-2">
-                      <label className="block text-xs font-medium text-gray-700">Target Field</label>
+                      <label
+                        className="block text-xs font-medium text-gray-700"
+                        htmlFor={`target-field-${index}`}
+                      >
+                        Target Field
+                      </label>
                       <select
+                        id={`target-field-${index}`}
                         value={targetField}
                         onChange={(e) => handleMapColumn(sourceColumn, e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        data-testid={`target-select-${index}`}
                       >
                         <option value="">— Select field —</option>
                         {(searchField ? filteredFields : catalogueFields).map((field) => (
@@ -214,13 +226,20 @@ export function ColumnMapper({
                     {/* Field type selector (if mapped) */}
                     {mapping && (
                       <div className="mt-3">
-                        <label className="block text-xs font-medium text-gray-700 mb-2">
+                        <label
+                          className="block text-xs font-medium text-gray-700 mb-2"
+                          htmlFor={`field-type-${index}`}
+                        >
                           Field Type
                         </label>
                         <select
+                          id={`field-type-${index}`}
                           value={mapping.fieldType}
-                          onChange={(e) => handleFieldTypeChange(sourceColumn, e.target.value as FieldType)}
+                          onChange={(e) =>
+                            handleFieldTypeChange(sourceColumn, e.target.value as FieldType)
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          data-testid={`field-type-select-${index}`}
                         >
                           {FIELD_TYPES.map((type) => (
                             <option key={type.value} value={type.value}>
@@ -254,8 +273,13 @@ export function ColumnMapper({
                         clipRule="evenodd"
                       />
                     </svg>
-                    Mapped to <strong>{mapping.targetField}</strong> as <strong>{mapping.fieldType}</strong>
-                    {isRequired && <span className="ml-2 px-2 py-0.5 bg-orange-200 text-orange-800 rounded">Required</span>}
+                    Mapped to <strong>{mapping.targetField}</strong> as{' '}
+                    <strong>{mapping.fieldType}</strong>
+                    {isRequired && (
+                      <span className="ml-2 px-2 py-0.5 bg-orange-200 text-orange-800 rounded">
+                        Required
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -272,7 +296,8 @@ export function ColumnMapper({
         </p>
         {!requiredFieldsMapped && (
           <p className="text-sm text-orange-800 mt-2">
-            ⚠️ Please map required fields: <strong>hex_code</strong> and <strong>designation</strong>
+            ⚠️ Please map required fields: <strong>hex_code</strong> and{' '}
+            <strong>designation</strong>
           </p>
         )}
       </div>

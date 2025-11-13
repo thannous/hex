@@ -39,41 +39,38 @@ async function parseFile(file: File): Promise<number> {
 export function useMockImportFlow(): ImportFlowController {
   const [state, setState] = useState<ImportFlowState>(INITIAL_STATE);
 
-  const startImportInternal = useCallback(
-    async (file: File) => {
+  const startImportInternal = useCallback(async (file: File) => {
+    setState({
+      step: 'parsing',
+      progress: 25,
+      error: null,
+      filename: file.name,
+    });
+
+    try {
+      const rowCount = await parseFile(file);
+
+      const generatedId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `mock-import-${Date.now()}`;
+
       setState({
-        step: 'parsing',
-        progress: 25,
+        step: 'complete',
+        progress: 100,
         error: null,
+        rowCount,
         filename: file.name,
+        importId: generatedId,
       });
-
-      try {
-        const rowCount = await parseFile(file);
-
-        const generatedId =
-          typeof crypto !== 'undefined' && 'randomUUID' in crypto
-            ? crypto.randomUUID()
-            : `mock-import-${Date.now()}`;
-
-        setState({
-          step: 'complete',
-          progress: 100,
-          error: null,
-          rowCount,
-          filename: file.name,
-          importId: generatedId,
-        });
-      } catch (error) {
-        setState({
-          step: 'error',
-          progress: 0,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-      }
-    },
-    []
-  );
+    } catch (error) {
+      setState({
+        step: 'error',
+        progress: 0,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }, []);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);

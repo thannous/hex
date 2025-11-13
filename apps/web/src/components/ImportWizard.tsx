@@ -95,9 +95,7 @@ export function ImportWizard({ tenantId, onCompleted, useImportFlowImpl }: Impor
             onDragOver={handleDrag}
             onDrop={handleDrop}
             className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              dragActive
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-300 hover:border-gray-400'
+              dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
             }`}
           >
             <input
@@ -108,7 +106,12 @@ export function ImportWizard({ tenantId, onCompleted, useImportFlowImpl }: Impor
               accept=".csv,.xlsx,.xls"
             />
             <label htmlFor="file-input" className="cursor-pointer block">
-              <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+              <svg
+                className="mx-auto h-12 w-12 text-gray-400"
+                stroke="currentColor"
+                fill="none"
+                viewBox="0 0 48 48"
+              >
                 <path
                   d="M28 8H12a4 4 0 00-4 4v24a4 4 0 004 4h24a4 4 0 004-4V20m-24-8v16m0-16l4-4m-4 4l-4-4m28 28l-4-4m4 4l4-4"
                   strokeWidth={2}
@@ -142,9 +145,7 @@ export function ImportWizard({ tenantId, onCompleted, useImportFlowImpl }: Impor
               style={{ width: `${state.progress}%` }}
             />
           </div>
-          {state.filename && (
-            <p className="text-sm text-gray-600">File: {state.filename}</p>
-          )}
+          {state.filename && <p className="text-sm text-gray-600">File: {state.filename}</p>}
         </div>
       )}
 
@@ -162,9 +163,7 @@ export function ImportWizard({ tenantId, onCompleted, useImportFlowImpl }: Impor
               </svg>
               <div className="ml-3">
                 <h3 className="font-medium text-green-800">Import successful!</h3>
-                <p className="text-sm text-green-700">
-                  {state.rowCount} rows parsed and stored
-                </p>
+                <p className="text-sm text-green-700">{state.rowCount} rows parsed and stored</p>
               </div>
             </div>
           </div>

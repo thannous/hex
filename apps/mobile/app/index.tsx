@@ -1,5 +1,5 @@
-import { View, Text, Pressable } from 'react-native';
-import { Link } from 'expo-router';
+import { View, Text, Pressable } from "react-native";
+import { Link } from "expo-router";
 
 export default function HomeScreen() {
   return (
@@ -11,7 +11,9 @@ export default function HomeScreen() {
         <View className="mt-8 gap-4">
           <Link href="/auth" asChild>
             <Pressable className="bg-primary-600 px-6 py-3 rounded-lg">
-              <Text className="text-white text-center font-semibold">Connexion</Text>
+              <Text className="text-white text-center font-semibold">
+                Connexion
+              </Text>
             </Pressable>
           </Link>
         </View>

@@ -165,5 +165,4 @@ USING (
 )
 WITH CHECK (
   is_member_of_tenant(tenant_id)
-  AND tenant_id = NEW.tenant_id  -- Can't change tenant
 );

@@ -365,6 +365,15 @@ package.json (Sprint 3 deps if needed)
   - Quote generation (Sprint 6)
   - Exports (Sprint 6)
 
+## 🔍 Verification & Tests (Mar 2025)
+
+- **Schema (Phase 1)** – See `supabase/migrations/004_mapping_tables.sql:1-180`, `005_mapping_indexes.sql:8-80`, `006_mapping_rls.sql:9-140`, and `007_mapping_audit.sql:1-210` for the tables, indexes, RLS, and audit triggers deployed for Sprint 3.
+- **tRPC API (Phase 2)** – `packages/api/src/router.ts:401-960` contains the seven tenant-aware procedures plus sampling logic for validation and duplicates.
+- **UI (Phase 3)** – The guided experience is implemented across `apps/web/src/components/DataPreview.tsx:12-210`, `ColumnMapper.tsx:1-220`, and `MappingWizard.tsx:1-320`, all mounted from `/app/mappings/page.tsx`.
+- **Business Logic (Phase 4)** – Shared helpers such as normalization, validation rule evaluation, and duplicate grouping live in `packages/api/src/lib/mappingUtils.ts:1-170` and are unit-tested.
+- **Unit tests** – `packages/api/tests/mappingUtils.test.ts:1-90` verifies normalization, suggestion fan-out, validation errors, and duplicate grouping. Run via `npm run test -- --filter=@hex/api` (vitest, Node env).
+- **Playwright** – `/testing/mapping-wizard` harness plus `apps/web/tests/e2e/mapping-wizard.spec.ts` validate the mapping → review → mapping round-trip alongside the existing import flow spec.
+
 ---
 
 ## 📞 Team Handoff

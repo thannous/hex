@@ -25,7 +25,11 @@ export function DataPreview({ importId, limit = 10, onColumnsLoaded }: DataPrevi
   const [copiedColumn, setCopiedColumn] = useState<string | null>(null);
 
   // Fetch preview with pagination
-  const { data: preview, isLoading, error } = trpc.mappings.getPreview.useQuery(
+  const {
+    data: preview,
+    isLoading,
+    error,
+  } = trpc.mappings.getPreview.useQuery(
     { importId, limit, offset },
     { refetchOnWindowFocus: false }
   );
@@ -146,9 +150,7 @@ export function DataPreview({ importId, limit = 10, onColumnsLoaded }: DataPrevi
 
       {/* Pagination controls */}
       <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-600">
-          {preview.columns.length} columns
-        </div>
+        <div className="text-sm text-gray-600">{preview.columns.length} columns</div>
         <div className="flex gap-2">
           <button
             onClick={() => setOffset(Math.max(0, offset - limit))}

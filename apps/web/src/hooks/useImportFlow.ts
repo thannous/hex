@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
+import { skipToken } from '@tanstack/react-query';
 import { trpc } from '@/lib/trpc';
 import { createBrowserClient } from '@hex/db';
 import { useFileParser } from './useFileParser';
@@ -41,10 +42,10 @@ export function useImportFlow(): ImportFlowController {
   const { parseCSV, parseXLSX } = useFileParser();
   const { mutateAsync: createImport } = trpc.imports.create.useMutation();
   const { mutateAsync: triggerServerParsing } = trpc.imports.triggerParsing.useMutation();
-  const { data: importStatus } = trpc.imports.getStatus.useQuery(
-    state.importId ? { importId: state.importId } : undefined,
-    { enabled: !!state.importId, refetchInterval: 2000 } // Poll every 2s
-  );
+  const importStatusInput = state.importId ? { importId: state.importId } : skipToken;
+  const { data: importStatus } = trpc.imports.getStatus.useQuery(importStatusInput, {
+    refetchInterval: state.importId ? 2000 : false,
+  });
 
   // Initialiser le client Supabase au premier appel
   const getSupabaseClient = useCallback(() => {
@@ -154,9 +155,11 @@ export function useImportFlow(): ImportFlowController {
   const getDisplayStatus = useCallback(() => {
     if (importStatus) {
       const progress = importStatus.status === 'parsed' ? 100 : 75;
+      const derivedStep: ImportFlowState['step'] =
+        importStatus.status === 'parsed' ? 'complete' : 'parsing';
       return {
         ...state,
-        step: importStatus.status === 'parsed' ? 'complete' : 'parsing',
+        step: derivedStep,
         progress,
         rowCount: importStatus.rowCount,
       };

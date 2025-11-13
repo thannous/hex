@@ -36,7 +36,7 @@ CREATE TABLE dpgf_mappings (
   field_type field_type_enum NOT NULL DEFAULT 'text',
   mapping_order integer NOT NULL DEFAULT 0,            -- Order for UI display
   created_at timestamptz DEFAULT NOW(),
-  created_by uuid NOT NULL REFERENCES profiles(id) ON DELETE SET NULL,
+  created_by uuid NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
   updated_at timestamptz DEFAULT NOW(),
 
   -- Constraint: one mapping per import per source column
@@ -55,6 +55,10 @@ COMMENT ON COLUMN dpgf_mappings.mapping_order IS 'Display order in UI (0-based)'
 -- ============================================================================
 -- mapping_memory: Learning system - track successful mappings over time
 -- ============================================================================
+-- Replace legacy table from initial schema if it exists so we can migrate to the
+-- richer schema introduced in Sprint 3 without manual intervention.
+DROP TABLE IF EXISTS mapping_memory CASCADE;
+
 CREATE TABLE mapping_memory (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -110,7 +114,7 @@ CREATE TABLE mapping_templates (
   -- Description for UI
   description text,
 
-  created_by uuid NOT NULL REFERENCES profiles(id) ON DELETE SET NULL,
+  created_by uuid NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
   created_at timestamptz DEFAULT NOW(),
   updated_at timestamptz DEFAULT NOW(),
 

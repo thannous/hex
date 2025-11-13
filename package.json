@@ -18,6 +18,7 @@
     "type-check": "turbo run type-check"
   },
   "devDependencies": {
+    "@types/papaparse": "^5.5.0",
     "turbo": "^2.6.1",
     "typescript": "^5.9.3"
   },

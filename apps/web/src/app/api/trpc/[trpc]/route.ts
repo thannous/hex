@@ -53,14 +53,15 @@ const handler = (req: Request) =>
           };
         }
 
-        // Récupérer le profil utilisateur et son tenant
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*, tenant_memberships(*)')
-          .eq('id', user.id)
-          .single();
+        // Récupérer le tenant via les memberships
+        const { data: membership, error: membershipError } = await supabase
+          .from('tenant_memberships')
+          .select('tenant_id, role')
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle();
 
-        if (!profile || !profile.tenant_memberships || profile.tenant_memberships.length === 0) {
+        if (membershipError || !membership) {
           return {
             userId: null,
             tenantId: null,
@@ -69,8 +70,6 @@ const handler = (req: Request) =>
             supabase,
           };
         }
-
-        const membership = profile.tenant_memberships[0];
 
         return {
           userId: user.id,

@@ -7,7 +7,7 @@
  * - output: { type: 'chunk', data: any[] } | { type: 'complete' } | { type: 'error', error: string }
  */
 
-import Papa from 'papaparse';
+import Papa, { type ParseLocalConfig, type ParseResult } from 'papaparse';
 
 const CHUNK_SIZE = 1000; // Nombre de lignes par chunk
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -26,13 +26,15 @@ self.onmessage = (event: MessageEvent) => {
   const { type, file, config } = event.data;
 
   if (type === 'parse') {
-    parseCSV(file as Blob, config as ParseConfig);
+    parseCSV(file as File, config as ParseConfig);
   } else if (type === 'abort') {
     shouldAbort = true;
   }
 };
 
-function parseCSV(file: Blob, config: ParseConfig) {
+type CsvRow = Record<string, unknown>;
+
+function parseCSV(file: File, config: ParseConfig) {
   // Vérifier taille
   if (file.size > MAX_FILE_SIZE) {
     self.postMessage({
@@ -46,14 +48,19 @@ function parseCSV(file: Blob, config: ParseConfig) {
 
   rowCount = 0;
   shouldAbort = false;
-  let currentChunk: any[] = [];
+  let currentChunk: CsvRow[] = [];
 
-  Papa.parse(file, {
+  const parseLocalFile = Papa.parse as unknown as (
+    input: File,
+    config: ParseLocalConfig<CsvRow, File>
+  ) => void;
+
+  parseLocalFile(file, {
     ...config,
     header: true,
     skipEmptyLines: true,
     dynamicTyping: false,
-    chunk: (results, parser) => {
+    chunk: (results: ParseResult<CsvRow>, parser: Papa.Parser) => {
       if (shouldAbort) {
         parser.abort();
         return;
@@ -83,13 +90,13 @@ function parseCSV(file: Blob, config: ParseConfig) {
         });
       }
     },
-    error: (error) => {
+    error: (error: Error, _file: File) => {
       self.postMessage({
         type: 'error',
         error: error.message,
       });
     },
-    complete: () => {
+    complete: (_results: ParseResult<CsvRow>, _file: File) => {
       // Envoyer chunk final
       if (currentChunk.length > 0) {
         self.postMessage({

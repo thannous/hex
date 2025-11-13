@@ -131,6 +131,8 @@ export type Database = {
           created_at: string
           filename: string
           id: string
+          mapping_status: Database["public"]["Enums"]["mapping_status_enum"] | null
+          mapping_version: number | null
           parsed_at: string | null
           row_count: number | null
           status: Database["public"]["Enums"]["import_status"]
@@ -143,6 +145,8 @@ export type Database = {
           created_at?: string
           filename: string
           id?: string
+          mapping_status?: Database["public"]["Enums"]["mapping_status_enum"] | null
+          mapping_version?: number | null
           parsed_at?: string | null
           row_count?: number | null
           status?: Database["public"]["Enums"]["import_status"]
@@ -155,6 +159,8 @@ export type Database = {
           created_at?: string
           filename?: string
           id?: string
+          mapping_status?: Database["public"]["Enums"]["mapping_status_enum"] | null
+          mapping_version?: number | null
           parsed_at?: string | null
           row_count?: number | null
           status?: Database["public"]["Enums"]["import_status"]
@@ -279,37 +285,158 @@ export type Database = {
           },
         ]
       }
-      mapping_memory: {
+      dpgf_mappings: {
         Row: {
-          confidence: number
-          hex_code: string
+          created_at: string | null
+          created_by: string
+          field_type: Database["public"]["Enums"]["field_type_enum"]
           id: string
-          last_used_at: string
-          normalized_label: string
+          import_id: string
+          mapping_order: number
+          source_column: string
+          target_field: string
           tenant_id: string
-          usage_count: number
+          updated_at: string | null
         }
         Insert: {
-          confidence?: number
-          hex_code: string
+          created_at?: string | null
+          created_by: string
+          field_type?: Database["public"]["Enums"]["field_type_enum"]
           id?: string
-          last_used_at?: string
-          normalized_label: string
+          import_id: string
+          mapping_order?: number
+          source_column: string
+          target_field: string
           tenant_id: string
-          usage_count?: number
+          updated_at?: string | null
         }
         Update: {
-          confidence?: number
-          hex_code?: string
+          created_at?: string | null
+          created_by?: string
+          field_type?: Database["public"]["Enums"]["field_type_enum"]
           id?: string
-          last_used_at?: string
-          normalized_label?: string
+          import_id?: string
+          mapping_order?: number
+          source_column?: string
+          target_field?: string
           tenant_id?: string
-          usage_count?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dpgf_mappings_import_id_fkey"
+            columns: ["import_id"]
+            isOneToOne: false
+            referencedRelation: "dpgf_imports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dpgf_mappings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dpgf_mappings_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mapping_memory: {
+        Row: {
+          confidence: number | null
+          created_at: string | null
+          id: string
+          last_used_at: string | null
+          source_column_normalized: string
+          source_column_original: string
+          supplier: string
+          target_field: string
+          tenant_id: string
+          use_count: number | null
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          source_column_normalized: string
+          source_column_original: string
+          supplier: string
+          target_field: string
+          tenant_id: string
+          use_count?: number | null
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          source_column_normalized?: string
+          source_column_original?: string
+          supplier?: string
+          target_field?: string
+          tenant_id?: string
+          use_count?: number | null
         }
         Relationships: [
           {
             foreignKeyName: "mapping_memory_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mapping_templates: {
+        Row: {
+          created_at: string | null
+          created_by: string
+          description: string | null
+          id: string
+          mappings: Json
+          supplier_name: string
+          tenant_id: string
+          updated_at: string | null
+          version: number
+        }
+        Insert: {
+          created_at?: string | null
+          created_by: string
+          description?: string | null
+          id?: string
+          mappings: Json
+          supplier_name: string
+          tenant_id: string
+          updated_at?: string | null
+          version?: number
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string
+          description?: string | null
+          id?: string
+          mappings?: Json
+          supplier_name?: string
+          tenant_id?: string
+          updated_at?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mapping_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mapping_templates_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -656,7 +783,17 @@ export type Database = {
       is_member_of: { Args: { tenant: string }; Returns: boolean }
     }
     Enums: {
+      field_type_enum:
+        | "text"
+        | "number"
+        | "date"
+        | "boolean"
+        | "email"
+        | "currency"
+        | "hex_code"
+        | "supplier_ref"
       import_status: "pending" | "processing" | "parsed" | "failed"
+      mapping_status_enum: "draft" | "applied" | "invalid"
       quote_status: "draft" | "sent" | "won" | "lost"
       role_type: "admin" | "engineer" | "viewer"
     }
@@ -1376,4 +1513,3 @@ export const Constants = {
     },
   },
 } as const
-

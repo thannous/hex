@@ -94,6 +94,23 @@ User Flow:
 - Real-time feedback
 - TanStack Query caching
 
+## 🔍 Verification Snapshot (Mar 2025)
+
+- **Phase 1 – Schema**: Tables, helper functions and audit triggers are implemented in `supabase/migrations/004_mapping_tables.sql:1-180`, with performant indexes in `supabase/migrations/005_mapping_indexes.sql:8-60`, tenant-safe RLS policies in `supabase/migrations/006_mapping_rls.sql:9-120`, and audit triggers/views in `supabase/migrations/007_mapping_audit.sql:1-150`.
+- **Phase 2 – tRPC API**: The seven procedures (`getPreview`, `create`, `getSuggestions`, `getTemplates`, `saveTemplate`, `validate`, `getDuplicates`) live in `packages/api/src/router.ts:401-960`, each wrapped with tenant-aware middleware and Zod schemas.
+- **Phase 3 – React UI**: `apps/web/src/components/DataPreview.tsx:12-210`, `apps/web/src/components/ColumnMapper.tsx:1-220`, and `apps/web/src/components/MappingWizard.tsx:1-320` implement the preview/mapping wizard that backs `/mappings`.
+- **Phase 4 – Business Logic**: Validation + duplicate detection logic shared through `packages/api/src/lib/mappingUtils.ts:1-170` and consumed in `packages/api/src/router.ts:700-960`, ensuring sampled validation and composite duplicate grouping are live.
+
+## 🧪 Sprint 3 Tests
+
+- Added focused unit tests in `packages/api/tests/mappingUtils.test.ts:1-85` covering normalization, suggestion expansion, validation rules, and duplicate detection.
+- Added a Playwright scenario in `apps/web/tests/e2e/mapping-wizard.spec.ts:1-29` that exercises the new `/testing/mapping-wizard` harness to ensure mappings persist when moving from mapping → review → mapping.
+- `npm run test -- --filter=@hex/api` now exercises the vitest suite (Node environment) while the Playwright suite can be run via `npm run test:e2e` once `NEXT_PUBLIC_ENABLE_TEST_ROUTES=true`.
+
+## 📝 Reste à faire
+
+- Broaden end-to-end coverage to Supabase-backed flows once a seeded tenant is available (current Playwright harness operates fully client-side).
+
 ## ⏳ Phase 4: Business Logic (Next - In Progress)
 
 ### Pending Tasks

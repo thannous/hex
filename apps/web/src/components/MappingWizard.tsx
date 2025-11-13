@@ -11,7 +11,7 @@
  * 4. Review & save
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { DataPreview } from './DataPreview';
 import { ColumnMapper } from './ColumnMapper';
@@ -24,7 +24,7 @@ interface MappingWizardProps {
 
 type Step = 'select' | 'preview' | 'mapping' | 'review' | 'success';
 
-export function MappingWizard({ tenantId, onCompleted }: MappingWizardProps) {
+export function MappingWizard({ tenantId: _tenantId, onCompleted }: MappingWizardProps) {
   const [step, setStep] = useState<Step>('select');
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<string>('');
@@ -37,15 +37,29 @@ export function MappingWizard({ tenantId, onCompleted }: MappingWizardProps) {
     refetchOnWindowFocus: false,
   });
 
-  // Fetch suggestions
-  const { mutate: getSuggestions, isPending: suggestionsLoading } = trpc.mappings.getSuggestions.useMutation({
-    onSuccess: (data) => {
-      setSuggestions(data);
+  const shouldFetchSuggestions = step === 'mapping' && !!selectedSupplier && columns.length > 0;
+  const { data: fetchedSuggestions } = trpc.mappings.getSuggestions.useQuery(
+    {
+      supplier: selectedSupplier,
+      sourceColumns: columns,
     },
-  });
+    {
+      enabled: shouldFetchSuggestions,
+      refetchOnWindowFocus: false,
+    }
+  );
+
+  useEffect(() => {
+    if (!shouldFetchSuggestions) {
+      setSuggestions([]);
+    } else if (fetchedSuggestions) {
+      setSuggestions(fetchedSuggestions);
+    }
+  }, [shouldFetchSuggestions, fetchedSuggestions]);
 
   // Save mappings
-  const { mutateAsync: createMapping, isPending: savingMappings } = trpc.mappings.create.useMutation();
+  const { mutateAsync: createMapping, isPending: savingMappings } =
+    trpc.mappings.create.useMutation();
 
   // Filter imports that are parsed but not yet mapped
   const parsedImports = imports?.filter((imp) => imp.status === 'parsed') || [];
@@ -58,22 +72,7 @@ export function MappingWizard({ tenantId, onCompleted }: MappingWizardProps) {
   const handlePreviewComplete = (previewColumns: string[]) => {
     setColumns(previewColumns);
 
-    // Auto-suggest mappings if supplier provided
-    if (selectedSupplier && previewColumns.length > 0) {
-      getSuggestions(
-        {
-          supplier: selectedSupplier,
-          sourceColumns: previewColumns,
-        },
-        {
-          onSuccess: () => {
-            setStep('mapping');
-          },
-        }
-      );
-    } else {
-      setStep('mapping');
-    }
+    setStep('mapping');
   };
 
   const handleMappingsChange = (newMappings: ColumnMapping[]) => {
@@ -118,28 +117,26 @@ export function MappingWizard({ tenantId, onCompleted }: MappingWizardProps) {
             const isActive = step === s;
             const isCompleted =
               (['select', 'preview', 'mapping', 'review'].includes(step) &&
-                ['select', 'preview', 'mapping', 'review'].indexOf(step as any) >= idx) ||
+                ['select', 'preview', 'mapping', 'review'].indexOf(step) >= idx) ||
               step === 'success';
 
             return (
               <div key={s} className="flex items-center flex-1">
                 <div
                   className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold text-sm transition-colors ${
-                    isActive || isCompleted
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-600'
+                    isActive || isCompleted ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
                   }`}
                 >
                   {isCompleted && !isActive ? '✓' : idx + 1}
                 </div>
                 <div className="flex-1">
-                  <div className={`h-1 ${
-                    isCompleted ? 'bg-blue-600' : 'bg-gray-200'
-                  }`} />
+                  <div className={`h-1 ${isCompleted ? 'bg-blue-600' : 'bg-gray-200'}`} />
                 </div>
-                <span className={`text-xs font-medium ml-2 whitespace-nowrap ${
-                  isActive ? 'text-blue-600' : 'text-gray-600'
-                }`}>
+                <span
+                  className={`text-xs font-medium ml-2 whitespace-nowrap ${
+                    isActive ? 'text-blue-600' : 'text-gray-600'
+                  }`}
+                >
                   {stepLabels[s]}
                 </span>
               </div>
@@ -253,6 +250,7 @@ export function MappingWizard({ tenantId, onCompleted }: MappingWizardProps) {
 
             <ColumnMapper
               columns={columns}
+              mappings={mappings}
               onMappingsChange={handleMappingsChange}
               suggestions={suggestions}
             />
@@ -332,9 +330,7 @@ export function MappingWizard({ tenantId, onCompleted }: MappingWizardProps) {
               </svg>
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Mapping Saved!</h2>
-            <p className="text-gray-600 mb-6">
-              {mappings.length} columns mapped successfully
-            </p>
+            <p className="text-gray-600 mb-6">{mappings.length} columns mapped successfully</p>
             <button
               onClick={() => {
                 // Reset wizard for next import
