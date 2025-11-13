@@ -56,14 +56,19 @@ export type CatalogueItem = z.infer<typeof CatalogueItemSchema>;
 // Supplier Price Schemas
 // ============================================================================
 
+const IsoDateStringSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
+  .refine((value) => !Number.isNaN(Date.parse(value)), 'Date must be valid');
+
 // Input schema (for create/update)
 export const SupplierPriceInputSchema = z.object({
   catalogueItemId: z.string().uuid(),
   supplierName: z.string().min(1, 'Supplier name required'),
   prixBrut: z.number().positive('Prix brut must be positive'),
-  remisePct: z.number().min(0).max(100).optional(),
-  validiteFin: z.string().optional(), // ISO date string YYYY-MM-DD
-  delaiJours: z.number().int().positive().optional(),
+  remisePct: z.union([z.number().min(0).max(100), z.null()]).optional(),
+  validiteFin: z.union([IsoDateStringSchema, z.null()]).optional(),
+  delaiJours: z.union([z.number().int().positive(), z.null()]).optional(),
 });
 
 // Output schema (includes id, timestamps, calculated prix_net)
@@ -73,6 +78,9 @@ export const SupplierPriceSchema = SupplierPriceInputSchema.extend({
   prixNet: z.number().optional(), // Auto-calculated by database
   createdAt: z.string(), // ISO timestamp
   updatedAt: z.string(), // ISO timestamp
+  remisePct: z.number().min(0).max(100).optional(),
+  validiteFin: IsoDateStringSchema.optional(),
+  delaiJours: z.number().int().positive().optional(),
 });
 
 export type SupplierPriceInput = z.infer<typeof SupplierPriceInputSchema>;
@@ -85,7 +93,7 @@ export type SupplierPrice = z.infer<typeof SupplierPriceSchema>;
 // Input schema (for create/upsert)
 export const MaterialIndexInputSchema = z.object({
   matiere: z.string().min(1, 'Material name required'),
-  indexDate: z.string(), // ISO date string YYYY-MM-DD
+  indexDate: IsoDateStringSchema, // ISO date string YYYY-MM-DD
   coefficient: z.number().positive('Coefficient must be positive'),
 });
 

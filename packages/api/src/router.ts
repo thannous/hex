@@ -16,8 +16,12 @@ import {
   fromDbSupplierPrice,
   toDbSupplierPrice,
   toBulkSupplierPrices,
+  fromDbMaterialIndex,
+  toDbMaterialIndex,
+  toBulkMaterialIndices,
   type DbCatalogueItem,
   type DbSupplierPrice,
+  type DbMaterialIndex,
 } from './lib/dbMappers';
 import {
   LoginInputSchema,
@@ -75,8 +79,14 @@ const publicProcedure = t.procedure;
 const authedProcedure = t.procedure.use(isAuthed);
 const adminOrEngineerProcedure = t.procedure.use(isAdminOrEngineer);
 
-const normalizeSearchTerm = (value: string) => value.trim().replace(/,/g, '\\,');
+const normalizeSearchTerm = (value: string) =>
+  value
+    .trim()
+    .replace(/\\/g, '\\\\')
+    .replace(/([,()])/g, '\\$1');
 const normalizeHexCodeValue = (value: string) => value.trim().toUpperCase();
+const isSupabaseNoRowError = (error: { code?: string } | null | undefined) =>
+  error?.code === 'PGRST116';
 
 // Routers
 export const authRouter = t.router({
@@ -357,7 +367,22 @@ export const catalogueRouter = t.router({
         .eq('tenant_id', tenantId)
         .single();
 
-      if (error || !data) {
+      if (error) {
+        if (isSupabaseNoRowError(error)) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Catalogue item not found',
+          });
+        }
+
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch catalogue item',
+          cause: error,
+        });
+      }
+
+      if (!data) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Catalogue item not found',
@@ -466,11 +491,33 @@ export const catalogueRouter = t.router({
         .select()
         .single();
 
-      if (error || !data) {
+      if (error) {
+        if (error.code === '23505') {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `Catalogue item with HEX code "${updates.hexCode}" already exists`,
+            cause: error,
+          });
+        }
+
+        if (isSupabaseNoRowError(error)) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Catalogue item not found',
+          });
+        }
+
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to update catalogue item',
+          cause: error,
+        });
+      }
+
+      if (!data) {
         throw new TRPCError({
           code: 'NOT_FOUND',
-          message: 'Catalogue item not found or update failed',
-          cause: error,
+          message: 'Catalogue item not found',
         });
       }
 
@@ -692,8 +739,6 @@ export const pricesRouter = t.router({
       const insertRow = {
         ...dbRow,
         remise_pct: dbRow.remise_pct ?? undefined,
-        validite_fin: dbRow.validite_fin ?? undefined,
-        delai_jours: dbRow.delai_jours ?? undefined,
       };
 
       const { data, error } = await supabase
@@ -787,15 +832,23 @@ export const pricesRouter = t.router({
       const { id, ...updates } = input;
 
       const dbRow = toDbSupplierPrice({ ...updates, tenantId });
-
-      // Convert null to undefined for Supabase update
-      const updateRow = {
-        ...dbRow,
-        remise_pct: dbRow.remise_pct ?? undefined,
-        validite_fin: dbRow.validite_fin ?? undefined,
-        delai_jours: dbRow.delai_jours ?? undefined,
+      const { tenant_id: _tenant, ...columnValues } = dbRow;
+      const updateRow: Record<string, unknown> = {
+        ...columnValues,
         updated_at: new Date().toISOString(),
       };
+
+      const optionalFieldMap = [
+        ['remisePct', 'remise_pct'],
+        ['validiteFin', 'validite_fin'],
+        ['delaiJours', 'delai_jours'],
+      ] as const;
+
+      for (const [inputKey, dbColumn] of optionalFieldMap) {
+        if (!Object.prototype.hasOwnProperty.call(updates, inputKey)) {
+          delete updateRow[dbColumn];
+        }
+      }
 
       const { data, error } = await supabase
         .from('supplier_prices')
@@ -844,18 +897,291 @@ export const pricesRouter = t.router({
 });
 
 export const indicesRouter = t.router({
-  listByMaterial: authedProcedure
-    .input(z.object({ matiere: z.string() }))
+  /**
+   * List all material indices for the current tenant
+   * Supports pagination and filtering by material
+   */
+  list: authedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().int().positive().max(1000).default(100),
+          offset: z.number().int().nonnegative().default(0),
+          matiere: z.string().optional(),
+        })
+        .optional()
+    )
+    .output(z.array(MaterialIndexSchema))
     .query(async ({ input, ctx }) => {
-      // Placeholder: Will query material_indices
-      return [];
+      const { limit = 100, offset = 0, matiere } = input || {};
+      const { supabase, tenantId } = ctx;
+
+      let query = supabase
+        .from('material_indices')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('index_date', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      // Filter by material if provided
+      if (matiere) {
+        query = query.eq('matiere', matiere);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch material indices',
+          cause: error,
+        });
+      }
+
+      return (data || []).map((row) => fromDbMaterialIndex(row as DbMaterialIndex));
     }),
 
+  /**
+   * List material indices for a specific material
+   * Returns all historical indices ordered by date descending
+   */
+  listByMaterial: authedProcedure
+    .input(z.object({ matiere: z.string() }))
+    .output(z.array(MaterialIndexSchema))
+    .query(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      const { data, error } = await supabase
+        .from('material_indices')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('matiere', input.matiere)
+        .order('index_date', { ascending: false });
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch material indices',
+          cause: error,
+        });
+      }
+
+      return (data || []).map((row) => fromDbMaterialIndex(row as DbMaterialIndex));
+    }),
+
+  /**
+   * Get the latest index for a specific material
+   * Returns the most recent index entry
+   */
+  getLatest: authedProcedure
+    .input(z.object({ matiere: z.string() }))
+    .output(MaterialIndexSchema.nullable())
+    .query(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      const { data, error } = await supabase
+        .from('material_indices')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('matiere', input.matiere)
+        .order('index_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch latest material index',
+          cause: error,
+        });
+      }
+
+      return data ? fromDbMaterialIndex(data as DbMaterialIndex) : null;
+    }),
+
+  /**
+   * Get all unique materials with indices
+   * Returns list of distinct materials
+   */
+  listMaterials: authedProcedure
+    .output(z.array(z.string()))
+    .query(async ({ ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      const { data, error } = await supabase
+        .from('material_indices')
+        .select('matiere')
+        .eq('tenant_id', tenantId)
+        .order('matiere', { ascending: true });
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch materials list',
+          cause: error,
+        });
+      }
+
+      // Get unique materials
+      const uniqueMaterials = [...new Set((data || []).map((row) => row.matiere))];
+      return uniqueMaterials;
+    }),
+
+  /**
+   * Create a single material index
+   */
   create: adminOrEngineerProcedure
-    .input(MaterialIndexSchema)
+    .input(MaterialIndexInputSchema)
+    .output(MaterialIndexSchema)
     .mutation(async ({ input, ctx }) => {
-      // Placeholder: Will insert into material_indices
-      return { id: 'idx_' + Date.now(), ...input };
+      const { supabase, tenantId } = ctx;
+
+      const dbRow = toDbMaterialIndex({
+        ...input,
+        tenantId,
+      });
+
+      const { data, error } = await supabase
+        .from('material_indices')
+        .insert(dbRow)
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          // UNIQUE constraint violation
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `Material index for "${input.matiere}" on date "${input.indexDate}" already exists`,
+          });
+        }
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to create material index',
+          cause: error,
+        });
+      }
+
+      return fromDbMaterialIndex(data as DbMaterialIndex);
+    }),
+
+  /**
+   * Bulk upsert material indices using PostgreSQL RPC function
+   * Uses migration 008_bulk_operations.sql
+   * ON CONFLICT updates existing indices
+   */
+  bulkUpsert: adminOrEngineerProcedure
+    .input(z.object({ indices: z.array(MaterialIndexInputSchema).min(1).max(1000) }))
+    .output(
+      z.object({
+        created: z.number(),
+        updated: z.number(),
+        errors: z.number(),
+        error_details: z.array(
+          z.object({
+            matiere: z.string().optional(),
+            index_date: z.string().optional(),
+            error: z.string(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      // Transform camelCase → snake_case for RPC call
+      const dbIndices = toBulkMaterialIndices(
+        input.indices.map((i) => ({ ...i, tenantId }))
+      );
+
+      // @ts-expect-error - RPC function from migration 008, types not yet generated
+      const { data, error } = await supabase.rpc('bulk_upsert_material_indices', {
+        p_tenant_id: tenantId,
+        p_indices: dbIndices,
+      });
+
+      if (error || !data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to bulk upsert material indices',
+          cause: error,
+        });
+      }
+
+      return data as unknown as {
+        created: number;
+        updated: number;
+        errors: number;
+        error_details: Array<{
+          matiere?: string;
+          index_date?: string;
+          error: string;
+        }>;
+      };
+    }),
+
+  /**
+   * Update an existing material index
+   */
+  update: adminOrEngineerProcedure
+    .input(
+      MaterialIndexInputSchema.extend({
+        id: z.string().uuid(),
+      })
+    )
+    .output(MaterialIndexSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+      const { id, ...updates } = input;
+
+      const dbUpdates = {
+        ...toDbMaterialIndex({ ...updates, tenantId }),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from('material_indices')
+        .update(dbUpdates)
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .select()
+        .single();
+
+      if (error || !data) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Material index not found or update failed',
+          cause: error,
+        });
+      }
+
+      return fromDbMaterialIndex(data as DbMaterialIndex);
+    }),
+
+  /**
+   * Delete a material index
+   */
+  delete: adminOrEngineerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      const { error } = await supabase
+        .from('material_indices')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId);
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to delete material index',
+          cause: error,
+        });
+      }
+
+      return { success: true };
     }),
 });
 
