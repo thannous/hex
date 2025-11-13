@@ -15,8 +15,11 @@ import {
   SignupInputSchema,
   CreateImportSchema,
   CatalogueItemSchema,
+  CatalogueItemInputSchema,
   SupplierPriceSchema,
+  SupplierPriceInputSchema,
   MaterialIndexSchema,
+  MaterialIndexInputSchema,
   CreateQuoteSchema,
   PricingParamsSchema,
   CreateMappingSchema,
@@ -270,34 +273,306 @@ export const importsRouter = t.router({
 });
 
 export const catalogueRouter = t.router({
+  /**
+   * List all catalogue items for the current tenant
+   * Supports pagination and search
+   */
   list: authedProcedure
-    .query(async ({ ctx }) => {
-      // Placeholder: Will query catalogue_items for tenant
-      return [];
+    .input(
+      z
+        .object({
+          limit: z.number().int().positive().max(1000).default(100),
+          offset: z.number().int().nonnegative().default(0),
+          search: z.string().optional(),
+        })
+        .optional()
+    )
+    .output(z.array(CatalogueItemSchema))
+    .query(async ({ input, ctx }) => {
+      const { limit = 100, offset = 0, search } = input || {};
+      const { supabase, tenantId } = ctx;
+
+      let query = supabase
+        .from('catalogue_items')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('hex_code', { ascending: true })
+        .range(offset, offset + limit - 1);
+
+      // Apply search filter if provided
+      if (search) {
+        query = query.or(
+          `hex_code.ilike.%${search}%,designation.ilike.%${search}%,matiere.ilike.%${search}%`
+        );
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch catalogue items',
+          cause: error,
+        });
+      }
+
+      // Transform database rows to API schema (snake_case → camelCase)
+      return (data || []).map((row) => ({
+        id: row.id,
+        tenantId: row.tenant_id,
+        hexCode: row.hex_code,
+        designation: row.designation,
+        tempsUnitaireH: row.temps_unitaire_h ?? undefined,
+        uniteMesure: row.unite_mesure ?? undefined,
+        dn: row.dn ?? undefined,
+        pn: row.pn ?? undefined,
+        matiere: row.matiere ?? undefined,
+        connexion: row.connexion ?? undefined,
+        discipline: row.discipline ?? undefined,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
     }),
 
+  /**
+   * Get a single catalogue item by ID
+   */
+  getById: authedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .output(CatalogueItemSchema)
+    .query(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      const { data, error } = await supabase
+        .from('catalogue_items')
+        .select('*')
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (error || !data) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Catalogue item not found',
+        });
+      }
+
+      return {
+        id: data.id,
+        tenantId: data.tenant_id,
+        hexCode: data.hex_code,
+        designation: data.designation,
+        tempsUnitaireH: data.temps_unitaire_h ?? undefined,
+        uniteMesure: data.unite_mesure ?? undefined,
+        dn: data.dn ?? undefined,
+        pn: data.pn ?? undefined,
+        matiere: data.matiere ?? undefined,
+        connexion: data.connexion ?? undefined,
+        discipline: data.discipline ?? undefined,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+    }),
+
+  /**
+   * Create a new catalogue item
+   */
   create: adminOrEngineerProcedure
-    .input(CatalogueItemSchema)
+    .input(CatalogueItemInputSchema)
+    .output(CatalogueItemSchema)
     .mutation(async ({ input, ctx }) => {
-      // Placeholder: Will insert into catalogue_items
-      return { id: 'cat_' + Date.now(), ...input };
+      const { supabase, tenantId } = ctx;
+
+      // Transform camelCase → snake_case
+      const dbRow = {
+        tenant_id: tenantId,
+        hex_code: input.hexCode,
+        designation: input.designation,
+        temps_unitaire_h: input.tempsUnitaireH ?? null,
+        unite_mesure: input.uniteMesure ?? null,
+        dn: input.dn ?? null,
+        pn: input.pn ?? null,
+        matiere: input.matiere ?? null,
+        connexion: input.connexion ?? null,
+        discipline: input.discipline ?? null,
+      };
+
+      const { data, error } = await supabase
+        .from('catalogue_items')
+        .insert(dbRow)
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          // UNIQUE constraint violation
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `Catalogue item with HEX code "${input.hexCode}" already exists`,
+          });
+        }
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to create catalogue item',
+          cause: error,
+        });
+      }
+
+      return {
+        id: data.id,
+        tenantId: data.tenant_id,
+        hexCode: data.hex_code,
+        designation: data.designation,
+        tempsUnitaireH: data.temps_unitaire_h ?? undefined,
+        uniteMesure: data.unite_mesure ?? undefined,
+        dn: data.dn ?? undefined,
+        pn: data.pn ?? undefined,
+        matiere: data.matiere ?? undefined,
+        connexion: data.connexion ?? undefined,
+        discipline: data.discipline ?? undefined,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
     }),
 
+  /**
+   * Update an existing catalogue item
+   */
   update: adminOrEngineerProcedure
     .input(
-      CatalogueItemSchema.extend({
+      CatalogueItemInputSchema.extend({
         id: z.string().uuid(),
       })
     )
+    .output(CatalogueItemSchema)
     .mutation(async ({ input, ctx }) => {
-      // Placeholder: Will update catalogue_items
-      return input;
+      const { supabase, tenantId } = ctx;
+      const { id, ...updates } = input;
+
+      // Transform camelCase → snake_case
+      const dbUpdates = {
+        hex_code: updates.hexCode,
+        designation: updates.designation,
+        temps_unitaire_h: updates.tempsUnitaireH ?? null,
+        unite_mesure: updates.uniteMesure ?? null,
+        dn: updates.dn ?? null,
+        pn: updates.pn ?? null,
+        matiere: updates.matiere ?? null,
+        connexion: updates.connexion ?? null,
+        discipline: updates.discipline ?? null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from('catalogue_items')
+        .update(dbUpdates)
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .select()
+        .single();
+
+      if (error || !data) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Catalogue item not found or update failed',
+          cause: error,
+        });
+      }
+
+      return {
+        id: data.id,
+        tenantId: data.tenant_id,
+        hexCode: data.hex_code,
+        designation: data.designation,
+        tempsUnitaireH: data.temps_unitaire_h ?? undefined,
+        uniteMesure: data.unite_mesure ?? undefined,
+        dn: data.dn ?? undefined,
+        pn: data.pn ?? undefined,
+        matiere: data.matiere ?? undefined,
+        connexion: data.connexion ?? undefined,
+        discipline: data.discipline ?? undefined,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
     }),
 
+  /**
+   * Delete a catalogue item
+   * Note: Will cascade delete related supplier_prices via FK constraint
+   */
   delete: adminOrEngineerProcedure
     .input(z.object({ id: z.string().uuid() }))
+    .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      const { error } = await supabase
+        .from('catalogue_items')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId);
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to delete catalogue item',
+          cause: error,
+        });
+      }
+
       return { success: true };
+    }),
+
+  /**
+   * Import catalogue items from a mapped DPGF import (Sprint 3 integration)
+   * Uses RPC function from migration 010_catalogue_helpers.sql
+   */
+  importFromMapping: adminOrEngineerProcedure
+    .input(z.object({ importId: z.string().uuid() }))
+    .output(
+      z.object({
+        import: z.object({
+          created: z.number(),
+          skipped: z.number(),
+          errors: z.number(),
+          error_details: z.array(
+            z.object({
+              hex_code: z.string().optional(),
+              error: z.string(),
+            })
+          ),
+        }),
+        link: z.object({
+          linked: z.number(),
+        }),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      // @ts-expect-error - RPC function from migration 010, types not yet generated
+      const { data, error } = await supabase.rpc('import_and_link_catalogue', {
+        p_tenant_id: tenantId,
+        p_import_id: input.importId,
+      });
+
+      if (error || !data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to import catalogue from mapping',
+          cause: error,
+        });
+      }
+
+      return data as unknown as {
+        import: {
+          created: number;
+          skipped: number;
+          errors: number;
+          error_details: Array<{ hex_code?: string; error: string }>;
+        };
+        link: { linked: number };
+      };
     }),
 });
 
