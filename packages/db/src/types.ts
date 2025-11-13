@@ -452,6 +452,7 @@ export type Database = {
           index_date: string
           matiere: string
           tenant_id: string
+          updated_at: string
         }
         Insert: {
           coefficient: number
@@ -460,6 +461,7 @@ export type Database = {
           index_date: string
           matiere: string
           tenant_id: string
+          updated_at?: string
         }
         Update: {
           coefficient?: number
@@ -468,6 +470,7 @@ export type Database = {
           index_date?: string
           matiere?: string
           tenant_id?: string
+          updated_at?: string
         }
         Relationships: [
           {

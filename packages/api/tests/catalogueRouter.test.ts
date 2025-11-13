@@ -69,6 +69,15 @@ describe('catalogueRouter schemas', () => {
       const result = CatalogueItemInputSchema.safeParse(invalidInput);
       expect(result.success).toBe(false);
     });
+
+    it('normalizes hexCode to uppercase and trims whitespace', () => {
+      const result = CatalogueItemInputSchema.parse({
+        hexCode: '  ab-c123  ',
+        designation: 'Trimmed Item',
+      });
+
+      expect(result.hexCode).toBe('AB-C123');
+    });
   });
 
   describe('CatalogueItemSchema (output)', () => {
@@ -132,6 +141,7 @@ describe('catalogueRouter procedures', () => {
     const procedures = Object.keys(catalogueRouter._def.procedures);
     expect(procedures).toContain('list');
     expect(procedures).toContain('getById');
+    expect(procedures).toContain('getByHexCode');
     expect(procedures).toContain('create');
     expect(procedures).toContain('update');
     expect(procedures).toContain('delete');

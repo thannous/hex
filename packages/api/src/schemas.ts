@@ -24,8 +24,13 @@ export const CreateImportSchema = z.object({
 // ============================================================================
 
 // Input schema (for create/update)
+const HexCodeSchema = z
+  .string()
+  .min(1, 'HEX code required')
+  .transform((value) => value.trim().toUpperCase());
+
 export const CatalogueItemInputSchema = z.object({
-  hexCode: z.string().min(1, 'HEX code required'),
+  hexCode: HexCodeSchema,
   designation: z.string().min(1, 'Designation required'),
   tempsUnitaireH: z.number().positive().optional(),
   uniteMesure: z.string().optional(),

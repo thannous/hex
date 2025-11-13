@@ -11,6 +11,11 @@ import {
   normalizeSupplierName,
 } from './lib/mappingUtils';
 import {
+  fromDbCatalogueItem,
+  toDbCatalogueItem,
+  type DbCatalogueItem,
+} from './lib/dbMappers';
+import {
   LoginInputSchema,
   SignupInputSchema,
   CreateImportSchema,
@@ -65,6 +70,9 @@ const isAdminOrEngineer = t.middleware(({ ctx, next }) => {
 const publicProcedure = t.procedure;
 const authedProcedure = t.procedure.use(isAuthed);
 const adminOrEngineerProcedure = t.procedure.use(isAdminOrEngineer);
+
+const normalizeSearchTerm = (value: string) => value.trim().replace(/,/g, '\\,');
+const normalizeHexCodeValue = (value: string) => value.trim().toUpperCase();
 
 // Routers
 export const authRouter = t.router({
@@ -275,7 +283,7 @@ export const importsRouter = t.router({
 export const catalogueRouter = t.router({
   /**
    * List all catalogue items for the current tenant
-   * Supports pagination and search
+   * Supports pagination, search, and filters
    */
   list: authedProcedure
     .input(
@@ -284,12 +292,14 @@ export const catalogueRouter = t.router({
           limit: z.number().int().positive().max(1000).default(100),
           offset: z.number().int().nonnegative().default(0),
           search: z.string().optional(),
+          matiere: z.string().min(1).optional(),
+          discipline: z.string().min(1).optional(),
         })
         .optional()
     )
     .output(z.array(CatalogueItemSchema))
     .query(async ({ input, ctx }) => {
-      const { limit = 100, offset = 0, search } = input || {};
+      const { limit = 100, offset = 0, search, matiere, discipline } = input || {};
       const { supabase, tenantId } = ctx;
 
       let query = supabase
@@ -297,12 +307,20 @@ export const catalogueRouter = t.router({
         .select('*')
         .eq('tenant_id', tenantId)
         .order('hex_code', { ascending: true })
+        .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
-      // Apply search filter if provided
-      if (search) {
+      if (matiere) {
+        query = query.eq('matiere', matiere);
+      }
+      if (discipline) {
+        query = query.eq('discipline', discipline);
+      }
+
+      if (search?.trim()) {
+        const sanitized = normalizeSearchTerm(search);
         query = query.or(
-          `hex_code.ilike.%${search}%,designation.ilike.%${search}%,matiere.ilike.%${search}%`
+          `hex_code.ilike.%${sanitized}%,designation.ilike.%${sanitized}%,matiere.ilike.%${sanitized}%`
         );
       }
 
@@ -316,22 +334,7 @@ export const catalogueRouter = t.router({
         });
       }
 
-      // Transform database rows to API schema (snake_case → camelCase)
-      return (data || []).map((row) => ({
-        id: row.id,
-        tenantId: row.tenant_id,
-        hexCode: row.hex_code,
-        designation: row.designation,
-        tempsUnitaireH: row.temps_unitaire_h ?? undefined,
-        uniteMesure: row.unite_mesure ?? undefined,
-        dn: row.dn ?? undefined,
-        pn: row.pn ?? undefined,
-        matiere: row.matiere ?? undefined,
-        connexion: row.connexion ?? undefined,
-        discipline: row.discipline ?? undefined,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
+      return (data || []).map((row) => fromDbCatalogueItem(row as DbCatalogueItem));
     }),
 
   /**
@@ -357,21 +360,34 @@ export const catalogueRouter = t.router({
         });
       }
 
-      return {
-        id: data.id,
-        tenantId: data.tenant_id,
-        hexCode: data.hex_code,
-        designation: data.designation,
-        tempsUnitaireH: data.temps_unitaire_h ?? undefined,
-        uniteMesure: data.unite_mesure ?? undefined,
-        dn: data.dn ?? undefined,
-        pn: data.pn ?? undefined,
-        matiere: data.matiere ?? undefined,
-        connexion: data.connexion ?? undefined,
-        discipline: data.discipline ?? undefined,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      };
+      return fromDbCatalogueItem(data as DbCatalogueItem);
+    }),
+
+  /**
+   * Get a catalogue item by its HEX code (case-insensitive)
+   */
+  getByHexCode: authedProcedure
+    .input(z.object({ hexCode: z.string().min(1) }))
+    .output(CatalogueItemSchema)
+    .query(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+      const normalizedHex = normalizeHexCodeValue(input.hexCode);
+
+      const { data, error } = await supabase
+        .from('catalogue_items')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('hex_code', normalizedHex)
+        .single();
+
+      if (error || !data) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Catalogue item with HEX code ${normalizedHex} not found`,
+        });
+      }
+
+      return fromDbCatalogueItem(data as DbCatalogueItem);
     }),
 
   /**
@@ -383,19 +399,11 @@ export const catalogueRouter = t.router({
     .mutation(async ({ input, ctx }) => {
       const { supabase, tenantId } = ctx;
 
-      // Transform camelCase → snake_case
-      const dbRow = {
-        tenant_id: tenantId,
-        hex_code: input.hexCode,
-        designation: input.designation,
-        temps_unitaire_h: input.tempsUnitaireH ?? null,
-        unite_mesure: input.uniteMesure ?? null,
-        dn: input.dn ?? null,
-        pn: input.pn ?? null,
-        matiere: input.matiere ?? null,
-        connexion: input.connexion ?? null,
-        discipline: input.discipline ?? null,
-      };
+      const dbRow = toDbCatalogueItem({
+        ...input,
+        tenantId,
+        hexCode: input.hexCode,
+      });
 
       const { data, error } = await supabase
         .from('catalogue_items')
@@ -418,21 +426,7 @@ export const catalogueRouter = t.router({
         });
       }
 
-      return {
-        id: data.id,
-        tenantId: data.tenant_id,
-        hexCode: data.hex_code,
-        designation: data.designation,
-        tempsUnitaireH: data.temps_unitaire_h ?? undefined,
-        uniteMesure: data.unite_mesure ?? undefined,
-        dn: data.dn ?? undefined,
-        pn: data.pn ?? undefined,
-        matiere: data.matiere ?? undefined,
-        connexion: data.connexion ?? undefined,
-        discipline: data.discipline ?? undefined,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      };
+      return fromDbCatalogueItem(data as DbCatalogueItem);
     }),
 
   /**
@@ -449,17 +443,14 @@ export const catalogueRouter = t.router({
       const { supabase, tenantId } = ctx;
       const { id, ...updates } = input;
 
-      // Transform camelCase → snake_case
+      const dbInput = toDbCatalogueItem({
+        ...updates,
+        tenantId,
+        hexCode: updates.hexCode,
+      });
+      const { tenant_id: _tenant, ...columnValues } = dbInput;
       const dbUpdates = {
-        hex_code: updates.hexCode,
-        designation: updates.designation,
-        temps_unitaire_h: updates.tempsUnitaireH ?? null,
-        unite_mesure: updates.uniteMesure ?? null,
-        dn: updates.dn ?? null,
-        pn: updates.pn ?? null,
-        matiere: updates.matiere ?? null,
-        connexion: updates.connexion ?? null,
-        discipline: updates.discipline ?? null,
+        ...columnValues,
         updated_at: new Date().toISOString(),
       };
 
@@ -479,21 +470,7 @@ export const catalogueRouter = t.router({
         });
       }
 
-      return {
-        id: data.id,
-        tenantId: data.tenant_id,
-        hexCode: data.hex_code,
-        designation: data.designation,
-        tempsUnitaireH: data.temps_unitaire_h ?? undefined,
-        uniteMesure: data.unite_mesure ?? undefined,
-        dn: data.dn ?? undefined,
-        pn: data.pn ?? undefined,
-        matiere: data.matiere ?? undefined,
-        connexion: data.connexion ?? undefined,
-        discipline: data.discipline ?? undefined,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      };
+      return fromDbCatalogueItem(data as DbCatalogueItem);
     }),
 
   /**
