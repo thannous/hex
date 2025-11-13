@@ -46,15 +46,12 @@ export interface DbSupplierPrice {
   id: string;
   tenant_id: string;
   catalogue_item_id: string;
-  fournisseur: string;
+  supplier_name: string;
   prix_brut: number;
   remise_pct: number | null;
-  prix_net: number | null;
-  date_prix: string;
+  prix_net: number | null; // GENERATED column
+  validite_fin: string | null; // DATE
   delai_jours: number | null;
-  qte_min: number | null;
-  reference_fournisseur: string | null;
-  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -63,9 +60,8 @@ export interface DbMaterialIndex {
   id: string;
   tenant_id: string;
   matiere: string;
-  index_date: string;
-  valeur: number;
-  source: string | null;
+  index_date: string; // DATE
+  coefficient: number;
   created_at: string;
   updated_at: string;
 }
@@ -119,15 +115,12 @@ export function toDbSupplierPrice(
   return {
     tenant_id: price.tenantId,
     catalogue_item_id: price.catalogueItemId,
-    fournisseur: price.fournisseur,
+    supplier_name: price.supplierName,
     prix_brut: price.prixBrut,
     remise_pct: price.remisePct ?? null,
-    // prix_net is auto-calculated by trigger
-    date_prix: price.datePrix,
+    // prix_net is auto-calculated as GENERATED column
+    validite_fin: price.validiteFin ?? null,
     delai_jours: price.delaiJours ?? null,
-    qte_min: price.qteMin ?? null,
-    reference_fournisseur: price.referenceFournisseur ?? null,
-    is_active: price.isActive ?? true,
   };
 }
 
@@ -136,15 +129,12 @@ export function fromDbSupplierPrice(row: DbSupplierPrice): SupplierPrice {
     id: row.id,
     tenantId: row.tenant_id,
     catalogueItemId: row.catalogue_item_id,
-    fournisseur: row.fournisseur,
+    supplierName: row.supplier_name,
     prixBrut: row.prix_brut,
     remisePct: row.remise_pct ?? undefined,
-    prixNet: row.prix_net ?? undefined,
-    datePrix: row.date_prix,
+    prixNet: row.prix_net ?? undefined, // Auto-calculated
+    validiteFin: row.validite_fin ?? undefined,
     delaiJours: row.delai_jours ?? undefined,
-    qteMin: row.qte_min ?? undefined,
-    referenceFournisseur: row.reference_fournisseur ?? undefined,
-    isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -161,8 +151,7 @@ export function toDbMaterialIndex(
     tenant_id: index.tenantId,
     matiere: index.matiere,
     index_date: index.indexDate,
-    valeur: index.valeur,
-    source: index.source ?? null,
+    coefficient: index.coefficient,
   };
 }
 
@@ -172,8 +161,7 @@ export function fromDbMaterialIndex(row: DbMaterialIndex): MaterialIndex {
     tenantId: row.tenant_id,
     matiere: row.matiere,
     indexDate: row.index_date,
-    valeur: row.valeur,
-    source: row.source ?? undefined,
+    coefficient: row.coefficient,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

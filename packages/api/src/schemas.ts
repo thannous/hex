@@ -19,11 +19,14 @@ export const CreateImportSchema = z.object({
   storagePath: z.string(),
 });
 
+// ============================================================================
 // Catalogue Schemas
-export const CatalogueItemSchema = z.object({
-  id: z.string().uuid().optional(),
-  hexCode: z.string().min(1),
-  designation: z.string().min(1),
+// ============================================================================
+
+// Input schema (for create/update)
+export const CatalogueItemInputSchema = z.object({
+  hexCode: z.string().min(1, 'HEX code required'),
+  designation: z.string().min(1, 'Designation required'),
   tempsUnitaireH: z.number().positive().optional(),
   uniteMesure: z.string().optional(),
   dn: z.string().optional(),
@@ -33,24 +36,64 @@ export const CatalogueItemSchema = z.object({
   discipline: z.string().optional(),
 });
 
+// Output schema (includes id, timestamps)
+export const CatalogueItemSchema = CatalogueItemInputSchema.extend({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  createdAt: z.string(), // ISO timestamp
+  updatedAt: z.string(), // ISO timestamp
+});
+
+export type CatalogueItemInput = z.infer<typeof CatalogueItemInputSchema>;
+export type CatalogueItem = z.infer<typeof CatalogueItemSchema>;
+
+// ============================================================================
 // Supplier Price Schemas
-export const SupplierPriceSchema = z.object({
-  id: z.string().uuid().optional(),
+// ============================================================================
+
+// Input schema (for create/update)
+export const SupplierPriceInputSchema = z.object({
   catalogueItemId: z.string().uuid(),
-  supplierName: z.string().min(1),
-  prixBrut: z.number().positive(),
-  remisePct: z.number().min(0).max(100).default(0),
-  validiteFin: z.date().optional(),
+  supplierName: z.string().min(1, 'Supplier name required'),
+  prixBrut: z.number().positive('Prix brut must be positive'),
+  remisePct: z.number().min(0).max(100).optional(),
+  validiteFin: z.string().optional(), // ISO date string YYYY-MM-DD
   delaiJours: z.number().int().positive().optional(),
 });
 
-// Material Index Schemas
-export const MaterialIndexSchema = z.object({
-  id: z.string().uuid().optional(),
-  matiere: z.string().min(1),
-  date: z.date(),
-  coefficient: z.number().positive(),
+// Output schema (includes id, timestamps, calculated prix_net)
+export const SupplierPriceSchema = SupplierPriceInputSchema.extend({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  prixNet: z.number().optional(), // Auto-calculated by database
+  createdAt: z.string(), // ISO timestamp
+  updatedAt: z.string(), // ISO timestamp
 });
+
+export type SupplierPriceInput = z.infer<typeof SupplierPriceInputSchema>;
+export type SupplierPrice = z.infer<typeof SupplierPriceSchema>;
+
+// ============================================================================
+// Material Index Schemas
+// ============================================================================
+
+// Input schema (for create/upsert)
+export const MaterialIndexInputSchema = z.object({
+  matiere: z.string().min(1, 'Material name required'),
+  indexDate: z.string(), // ISO date string YYYY-MM-DD
+  coefficient: z.number().positive('Coefficient must be positive'),
+});
+
+// Output schema (includes id, timestamps)
+export const MaterialIndexSchema = MaterialIndexInputSchema.extend({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  createdAt: z.string(), // ISO timestamp
+  updatedAt: z.string(), // ISO timestamp
+});
+
+export type MaterialIndexInput = z.infer<typeof MaterialIndexInputSchema>;
+export type MaterialIndex = z.infer<typeof MaterialIndexSchema>;
 
 // Quote Schemas
 export const CreateQuoteSchema = z.object({
