@@ -13,7 +13,11 @@ import {
 import {
   fromDbCatalogueItem,
   toDbCatalogueItem,
+  fromDbSupplierPrice,
+  toDbSupplierPrice,
+  toBulkSupplierPrices,
   type DbCatalogueItem,
+  type DbSupplierPrice,
 } from './lib/dbMappers';
 import {
   LoginInputSchema,
@@ -554,24 +558,288 @@ export const catalogueRouter = t.router({
 });
 
 export const pricesRouter = t.router({
-  listByCatalogue: authedProcedure
-    .input(z.object({ catalogueItemId: z.string().uuid() }))
+  /**
+   * List all supplier prices for the current tenant
+   * Supports pagination and filtering by supplier
+   */
+  list: authedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().int().positive().max(1000).default(100),
+          offset: z.number().int().nonnegative().default(0),
+          supplierName: z.string().optional(),
+        })
+        .optional()
+    )
+    .output(z.array(SupplierPriceSchema))
     .query(async ({ input, ctx }) => {
-      // Placeholder: Will query supplier_prices
-      return [];
+      const { limit = 100, offset = 0, supplierName } = input || {};
+      const { supabase, tenantId } = ctx;
+
+      let query = supabase
+        .from('supplier_prices')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      // Filter by supplier if provided
+      if (supplierName) {
+        query = query.ilike('supplier_name', `%${supplierName}%`);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch supplier prices',
+          cause: error,
+        });
+      }
+
+      return (data || []).map((row) => fromDbSupplierPrice(row as DbSupplierPrice));
     }),
 
+  /**
+   * List supplier prices for a specific catalogue item
+   * Returns active prices ordered by prix_net (cheapest first)
+   */
+  listByCatalogue: authedProcedure
+    .input(
+      z.object({
+        catalogueItemId: z.string().uuid(),
+        activeOnly: z.boolean().default(false),
+      })
+    )
+    .output(z.array(SupplierPriceSchema))
+    .query(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      let query = supabase
+        .from('supplier_prices')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('catalogue_item_id', input.catalogueItemId)
+        .order('prix_net', { ascending: true });
+
+      // Filter by active prices if requested
+      if (input.activeOnly) {
+        const today = new Date().toISOString().split('T')[0];
+        query = query.or(`validite_fin.is.null,validite_fin.gte.${today}`);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch catalogue prices',
+          cause: error,
+        });
+      }
+
+      return (data || []).map((row) => fromDbSupplierPrice(row as DbSupplierPrice));
+    }),
+
+  /**
+   * Get the cheapest active price for a catalogue item
+   */
+  getCheapestPrice: authedProcedure
+    .input(z.object({ catalogueItemId: z.string().uuid() }))
+    .output(SupplierPriceSchema.nullable())
+    .query(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+      const today = new Date().toISOString().split('T')[0];
+
+      const { data, error } = await supabase
+        .from('supplier_prices')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('catalogue_item_id', input.catalogueItemId)
+        .or(`validite_fin.is.null,validite_fin.gte.${today}`)
+        .order('prix_net', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch cheapest price',
+          cause: error,
+        });
+      }
+
+      return data ? fromDbSupplierPrice(data as DbSupplierPrice) : null;
+    }),
+
+  /**
+   * Create a single supplier price
+   */
   create: adminOrEngineerProcedure
-    .input(SupplierPriceSchema)
+    .input(SupplierPriceInputSchema)
+    .output(SupplierPriceSchema)
     .mutation(async ({ input, ctx }) => {
-      // Placeholder: Will insert into supplier_prices
-      return { id: 'price_' + Date.now(), ...input };
+      const { supabase, tenantId } = ctx;
+
+      const dbRow = toDbSupplierPrice({
+        ...input,
+        tenantId,
+      });
+
+      // Convert null to undefined for Supabase insert
+      const insertRow = {
+        ...dbRow,
+        remise_pct: dbRow.remise_pct ?? undefined,
+        validite_fin: dbRow.validite_fin ?? undefined,
+        delai_jours: dbRow.delai_jours ?? undefined,
+      };
+
+      const { data, error } = await supabase
+        .from('supplier_prices')
+        .insert(insertRow)
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23503') {
+          // Foreign key violation
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Catalogue item not found or does not belong to your tenant',
+          });
+        }
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to create supplier price',
+          cause: error,
+        });
+      }
+
+      return fromDbSupplierPrice(data as DbSupplierPrice);
     }),
 
-  update: adminOrEngineerProcedure
-    .input(SupplierPriceSchema.extend({ id: z.string().uuid() }))
+  /**
+   * Bulk create supplier prices using PostgreSQL RPC function
+   * Uses migration 008_bulk_operations.sql
+   */
+  bulkCreate: adminOrEngineerProcedure
+    .input(z.object({ prices: z.array(SupplierPriceInputSchema).min(1).max(1000) }))
+    .output(
+      z.object({
+        created: z.number(),
+        errors: z.number(),
+        error_details: z.array(
+          z.object({
+            catalogue_item_id: z.string().optional(),
+            supplier_name: z.string().optional(),
+            error: z.string(),
+          })
+        ),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      return input;
+      const { supabase, tenantId } = ctx;
+
+      // Transform camelCase → snake_case for RPC call
+      const dbPrices = toBulkSupplierPrices(
+        input.prices.map((p) => ({ ...p, tenantId }))
+      );
+
+      // @ts-expect-error - RPC function from migration 008, types not yet generated
+      const { data, error } = await supabase.rpc('bulk_create_supplier_prices', {
+        p_tenant_id: tenantId,
+        p_prices: dbPrices,
+      });
+
+      if (error || !data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to bulk create supplier prices',
+          cause: error,
+        });
+      }
+
+      return data as unknown as {
+        created: number;
+        errors: number;
+        error_details: Array<{
+          catalogue_item_id?: string;
+          supplier_name?: string;
+          error: string;
+        }>;
+      };
+    }),
+
+  /**
+   * Update an existing supplier price
+   */
+  update: adminOrEngineerProcedure
+    .input(
+      SupplierPriceInputSchema.extend({
+        id: z.string().uuid(),
+      })
+    )
+    .output(SupplierPriceSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+      const { id, ...updates } = input;
+
+      const dbRow = toDbSupplierPrice({ ...updates, tenantId });
+
+      // Convert null to undefined for Supabase update
+      const updateRow = {
+        ...dbRow,
+        remise_pct: dbRow.remise_pct ?? undefined,
+        validite_fin: dbRow.validite_fin ?? undefined,
+        delai_jours: dbRow.delai_jours ?? undefined,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from('supplier_prices')
+        .update(updateRow)
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .select()
+        .single();
+
+      if (error || !data) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Supplier price not found or update failed',
+          cause: error,
+        });
+      }
+
+      return fromDbSupplierPrice(data as DbSupplierPrice);
+    }),
+
+  /**
+   * Delete a supplier price
+   */
+  delete: adminOrEngineerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      const { supabase, tenantId } = ctx;
+
+      const { error } = await supabase
+        .from('supplier_prices')
+        .delete()
+        .eq('id', input.id)
+        .eq('tenant_id', tenantId);
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to delete supplier price',
+          cause: error,
+        });
+      }
+
+      return { success: true };
     }),
 });
 
